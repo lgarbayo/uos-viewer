@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>uos-viewer</title>
+    <link rel="stylesheet" href="/src/app/style.css" />
+  </head>
+  <body>
+    <canvas id="lienzo"></canvas>
+    <aside id="panel">
+      <h1>uos-viewer</h1>
+      <p>
+        Visor de referencia del formato <b>Unified Oral Scene</b>. Arrastra un
+        <code>.uos</code> aquí, o
+        <label class="boton">ábrelo<input id="fichero" type="file" accept=".uos" hidden /></label>.
+      </p>
+      <p class="nota">
+        Nada sale de tu navegador: el contenedor se lee en local, por rangos, sin subirlo a
+        ningún sitio.
+      </p>
+    </aside>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

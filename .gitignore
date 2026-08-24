@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+
+# Los .uos de prueba NO se versionan: son casos clinicos. El repositorio es publico y un
+# contenedor lleva DICOM, mallas y fotos de un paciente aunque esten seudonimizados.
+*.uos
+public/casos/

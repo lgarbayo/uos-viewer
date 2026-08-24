@@ -1,0 +1,39 @@
+:root {
+  --fondo: #0d0f12;
+  --panel: #14181d;
+  --texto: #d7dce2;
+  --tenue: #7d8794;
+  --linea: #232a32;
+  --acento: #4fb8ac;
+  --grave: #d9705a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--texto);
+  font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+#lienzo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#panel { position: fixed; top: 0; right: 0; width: 27rem; max-width: 100vw; height: 100%;
+  overflow-y: auto; padding: 1.25rem; background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-left: 1px solid var(--linea); backdrop-filter: blur(6px); }
+h1 { font-size: 1.05rem; margin: 0 0 .75rem; letter-spacing: .04em; }
+h2 { font-size: .82rem; color: var(--acento); word-break: break-all; margin: 0 0 .4rem; }
+h3 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--tenue); margin: 1.25rem 0 .4rem; }
+code { color: var(--acento); }
+dl { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: .5rem 0; }
+dt { color: var(--tenue); }
+dd { margin: 0; }
+ul { list-style: none; padding: 0; margin: 0; }
+li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
+.assets .k, .b, .f { display: inline-block; font-size: .72rem; color: var(--tenue);
+  margin-left: .4rem; }
+.assets .k { color: var(--acento); }
+.prov { color: var(--grave); font-size: .72rem; margin-left: .4rem; }
+.phi { display: inline-block; padding: .1rem .45rem; border: 1px solid var(--linea);
+  border-radius: 3px; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+.phi-identified, .phi-quarantined { color: var(--grave); border-color: var(--grave); }
+.vistas button { width: 100%; text-align: left; background: none; color: var(--texto);
+  border: 0; padding: .1rem 0; font: inherit; cursor: pointer; }
+.vistas button:hover { color: var(--acento); }
+.reparos .grave, .error { color: var(--grave); }
+.nota { color: var(--tenue); font-size: .78rem; }
+.boton { color: var(--acento); cursor: pointer; text-decoration: underline; }
