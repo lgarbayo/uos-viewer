@@ -8,7 +8,15 @@
  */
 
 import { BufferGeometry, Float32BufferAttribute } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Mesh } from 'three';
 
+import type { CapaClinica, Pieza } from '../uos/Clinico';
+import { fichaDe, porPieza } from '../uos/Clinico';
+import type { MetaSegmentacion } from '../uos/Derivados';
+import { decodificaEtiquetas } from '../uos/Derivados';
+import type { Asset } from '../uos/Manifest';
+import { esProvisional } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader } from '../uos/UosLoader';
 import { Escena } from './Escena';
@@ -50,11 +58,52 @@ async function abre(fichero: File): Promise<void> {
 
     // La escena primero: es lo que permite enseñar algo habiendo leído sólo el manifiesto
     // y el asset más ligero. El volumen ni se toca (§11.1, carga perezosa).
-    const escenaAsset = uos.de('mesh_gs_scene')[0];
-    if (escenaAsset && escenaAsset.media_type === 'model/stl') {
-      escena.ponMalla(leeSTL(await uos.bytes(escenaAsset)));
+    // ⚠️ Se elige por `media_type`, no por el orden ni por la extensión de la uri. El
+    // contenedor puede traer la escena convertida (glTF) Y el fichero original del escáner
+    // (STL) como assets distintos; el primero es para mirar y el segundo es el reversible.
+    const porTipo = (t: string): Asset | undefined =>
+      uos.de('mesh_gs_scene').find((a) => a.media_type === t);
+    const glb = porTipo('model/gltf-binary');
+    const stl = porTipo('model/stl');
+    if (glb) {
+      escena.ponMalla(await leeGLB(await uos.bytes(glb)));
+    } else if (stl) {
+      escena.ponMalla(leeSTL(await uos.bytes(stl)));
+    }
+    if (glb ?? stl) {
       if (vistas[0]) escena.aplicaVista(vistas[0].camera);
       else escena.encuadraTodo();
+    }
+
+    // La capa clínica, si el contenedor la trae. ⚠️ Se busca por NUESTRA convención
+    // (`clinical/`), porque no es UOS v0.2: un `.uos` de otro emisor no la traerá y tiene
+    // que abrirse igual. Por eso todo lo que sigue va tras un `if`.
+    const docClinico = uos
+      .de('document')
+      .find((a) => a.uri.startsWith('clinical/') && a.media_type === 'application/json');
+    let clinico: CapaClinica | null = null;
+    let piezas = new Map<string, Pieza>();
+    if (docClinico) {
+      clinico = JSON.parse(new TextDecoder().decode(await uos.bytes(docClinico)));
+      if (clinico) piezas = porPieza(clinico);
+    }
+
+    // `derived/` — Layer 3, cargado pero APAGADO (§5.5).
+    // `reparos` del loader es de solo lectura a proposito —es lo que el contenedor
+    // incumple— asi que lo que falle AL PINTAR se acumula aparte y se muestra junto.
+    const reparos = [...uos.reparos];
+    let meta: MetaSegmentacion | null = null;
+    const seg = uos.de('derived_seg')[0];
+    if (seg) {
+      meta = await uos.sidecar<MetaSegmentacion>(seg);
+      if (meta) {
+        try {
+          escena.ponEtiquetas(decodificaEtiquetas(await uos.bytes(seg), meta));
+        } catch (e) {
+          reparos.push({ grave: true, texto: String(e) });
+          meta = null;
+        }
+      }
     }
 
     panel.innerHTML = `
@@ -81,9 +130,21 @@ async function abre(fichero: File): Promise<void> {
         m.registrations
           .map(
             (r) =>
+              // ⚠️ Dos etiquetas distintas y no una. El spec (§6) llama PROVISIONAL a la
+              // registración automática por aprendizaje que nadie ha mirado, y pide que el
+              // visor lo indique. Una `icp_surface` sin verificar tampoco está firmada,
+              // pero no es lo mismo: un ajuste geométrico converge o no, y se puede leer
+              // su residuo. Meterlas en el mismo cajón perdería esa diferencia.
               `<li>${r.id}: ${r.source_frame} → ${r.target_frame}
                <span class="k">${r.method}</span>
-               ${r.verified_by ? '' : '<span class="prov">provisional</span>'}</li>`,
+               ${r.rms_error_mm != null ? `<span class="b">rms ${r.rms_error_mm.toFixed(3)} mm</span>` : ''}
+               ${
+                 esProvisional(r)
+                   ? '<span class="prov">provisional</span>'
+                   : r.verified_by
+                     ? `<span class="b">verificada por ${r.verified_by}</span>`
+                     : '<span class="sinver">sin verificar</span>'
+               }</li>`,
           )
           .join('') || '<li>ninguna</li>'
       }</ul>
@@ -94,12 +155,83 @@ async function abre(fichero: File): Promise<void> {
           .join('') || '<li>ninguna</li>'
       }</ul>
       ${
-        uos.reparos.length
-          ? `<h3>Reparos</h3><ul class="reparos">${uos.reparos
+        meta
+          ? `<h3>Derivados · inferencia</h3>
+             <div class="derived">
+               <label><input type="checkbox" id="ver-seg"> pintar la segmentación</label>
+               <p class="l3">Layer ${meta.regulatory.layer} · ${meta.regulatory.status}</p>
+               <p class="nota">${meta.model.name} ${meta.model.version} ·
+                 ${meta.labels.present.length} piezas ·
+                 ${meta.labels.n_labelled.toLocaleString()} de
+                 ${meta.labels.n_total.toLocaleString()} vértices</p>
+               <p class="nota">${meta.encoding.vocabulary} · pesos
+                 ${meta.model.weights_sha256 ? meta.model.weights_sha256.slice(0, 12) + '…' : 'no declarados'}</p>
+             </div>
+             <div id="pieza" class="pieza"><p class="nota">pincha un diente</p></div>`
+          : ''
+      }
+      ${
+        clinico
+          ? `<h3>Clínico · ${clinico.teeth.length} piezas</h3>
+             <p class="nota">${clinico.schema} — extensión del emisor, no UOS v0.2 ·
+               Layer ${clinico.regulatory.layer} · ${clinico.vocabulary}</p>
+             ${
+               clinico.measurements.length
+                 ? `<ul class="medidas">${clinico.measurements
+                     .map(
+                       (m) =>
+                         `<li class="${m.out_of_range ? 'fuera' : ''}">${m.name}
+                          ${m.side ? `<span class="b">${m.side}</span>` : ''}
+                          <b>${m.value}${m.unit}</b>
+                          <span class="b">${m.normal_min ?? '—'}–${m.normal_max ?? '—'}</span>
+                          ${m.out_of_range ? '<span class="l3">fuera</span>' : ''}</li>`,
+                     )
+                     .join('')}</ul>`
+                 : ''
+             }
+             ${
+               clinico.review.reasons.length
+                 ? `<h3>Revisión humana · ${clinico.review.reasons.length}</h3>
+                    <ul class="gate">${clinico.review.reasons
+                      .map((r) => `<li>${r}</li>`)
+                      .join('')}</ul>`
+                 : ''
+             }`
+          : ''
+      }
+      <p class="nota">arrastrar: rotar · rueda: zoom · clic derecho: desplazar</p>
+      ${
+        reparos.length
+          ? `<h3>Reparos</h3><ul class="reparos">${reparos
               .map((r) => `<li class="${r.grave ? 'grave' : ''}">${r.texto}</li>`)
               .join('')}</ul>`
           : ''
       }`;
+
+    const ver = panel.querySelector<HTMLInputElement>('#ver-seg');
+    ver?.addEventListener('change', () => escena.muestraEtiquetas(ver.checked));
+
+    // Picking semántico (§11.3): raycast a la malla → código FDI por vértice.
+    const salida = panel.querySelector<HTMLDivElement>('#pieza');
+    if (salida) {
+      lienzo.addEventListener('click', (ev) => {
+        const fdi = escena.pieza(ev.clientX, ev.clientY);
+        // ⚠️ Lo que se puede decir de la pieza es SOLO lo que el contenedor trae. Hoy eso
+        // es su código y de qué modelo salió; el pH y los hallazgos que el pipeline extrae
+        // no viajan porque el spec los manda a FHIR (§9), fuera del .uos.
+        if (!fdi) {
+          salida.innerHTML = '<p class="nota">ahí no hay ninguna pieza etiquetada</p>';
+          return;
+        }
+        // Lo que se puede decir de la pieza es SOLO lo que el contenedor trae, y de dónde
+        // viene cada mitad va escrito: la geometría la segmentó un modelo (Layer 3), lo
+        // clínico lo dice un informe que firmó una persona (Layer 1).
+        salida.innerHTML =
+          fichaDe(fdi, piezas.get(String(fdi)), true) +
+          `<p class="nota">segmentada por ${meta?.model.name ?? '—'} ·
+             <span class="l3">Layer 3</span></p>`;
+      });
+    }
 
     for (const b of panel.querySelectorAll<HTMLButtonElement>('button[data-v]')) {
       b.addEventListener('click', () => {
@@ -145,4 +277,19 @@ function leeSTL(bytes: Uint8Array): BufferGeometry {
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   return g;
+}
+
+
+/** glTF binario → geometría. `GLTFLoader.parse` no toca la red: recibe el buffer. */
+async function leeGLB(bytes: Uint8Array): Promise<BufferGeometry> {
+  const copia = bytes.slice().buffer;
+  const gltf = await new GLTFLoader().parseAsync(copia, '');
+  let geometria: BufferGeometry | null = null;
+  gltf.scene.traverse((o) => {
+    if (!geometria && (o as Mesh).isMesh) geometria = (o as Mesh).geometry;
+  });
+  if (!geometria) {
+    throw new Error('El glTF no trae ninguna malla: no hay escena que enseñar.');
+  }
+  return geometria;
 }

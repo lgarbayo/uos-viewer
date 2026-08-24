@@ -28,6 +28,7 @@ li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
   margin-left: .4rem; }
 .assets .k { color: var(--acento); }
 .prov { color: var(--grave); font-size: .72rem; margin-left: .4rem; }
+.sinver { color: #c9a227; font-size: .72rem; margin-left: .4rem; }
 .phi { display: inline-block; padding: .1rem .45rem; border: 1px solid var(--linea);
   border-radius: 3px; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
 .phi-identified, .phi-quarantined { color: var(--grave); border-color: var(--grave); }
@@ -37,3 +38,24 @@ li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
 .reparos .grave, .error { color: var(--grave); }
 .nota { color: var(--tenue); font-size: .78rem; }
 .boton { color: var(--acento); cursor: pointer; text-decoration: underline; }
+
+/* `derived/` — Layer 3. Se distingue del resto del panel a propósito: lo que sale de un
+   modelo no debe leerse igual que lo que alguien midió. */
+.derived { border: 1px solid var(--linea); border-left: 2px solid #c9a227;
+  padding: .5rem .6rem; margin: .35rem 0; }
+.derived label { cursor: pointer; }
+.l3 { color: #c9a227; font-size: .72rem; letter-spacing: .06em;
+  text-transform: uppercase; margin: .35rem 0 .2rem; }
+.derived .nota { margin: .15rem 0; }
+.pieza { color: var(--acento); margin: .4rem 0; min-height: 1.2em; }
+
+/* La ficha de una pieza. Va dentro del bloque de derivados pero con su propio fondo:
+   lo clínico es Layer 1 y la segmentación Layer 3, y no deben leerse igual. */
+.pieza { background: rgba(79,184,172,.06); border: 1px solid var(--linea);
+  padding: .5rem .6rem; margin: .4rem 0; min-height: 2rem; }
+.pieza h4 { margin: 0 0 .3rem; font-size: .84rem; color: var(--acento); }
+.ficha { display: grid; grid-template-columns: auto 1fr; gap: 0 .75rem; margin: .2rem 0; }
+.hueco { color: var(--tenue); font-size: .78rem; margin: .2rem 0; }
+.medidas li, .gate li { font-size: .78rem; }
+.medidas .fuera b { color: var(--grave); }
+.gate li { color: var(--tenue); }

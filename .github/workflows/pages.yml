@@ -1,0 +1,49 @@
+# Publica el visor en GitHub Pages en cada push a `main`.
+#
+# El sitio es ESTATICO y no lleva ningun `.uos`: los contenedores son datos clinicos y el
+# `.gitignore` los excluye. Quien abra la pagina arrastra el suyo, que se lee en local sin
+# subirlo a ningun sitio.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Una publicacion a la vez, y sin cancelar la que este a medias: cancelar un despliegue
+# deja la pagina servida a medias.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # `npm run build` corre `tsc --noEmit` antes de empaquetar: un fallo de tipos NO
+      # debe llegar a publicarse en verde.
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
