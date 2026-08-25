@@ -59,3 +59,47 @@ li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
 .medidas li, .gate li { font-size: .78rem; }
 .medidas .fuera b { color: var(--grave); }
 .gate li { color: var(--tenue); }
+
+/* --- cabecera persistente y ficha de pieza ------------------------------- */
+/* La cabecera se queda pegada arriba: es lo que permite abrir un segundo `.uos`
+   sin recargar, y antes vivía dentro del bloque que se reemplaza al abrir uno. */
+#cabecera { position: sticky; top: -1.25rem; z-index: 2; display: flex;
+  align-items: baseline; justify-content: space-between; gap: 1rem;
+  margin: -1.25rem -1.25rem .75rem; padding: 1.25rem 1.25rem .6rem;
+  background: var(--panel); border-bottom: 1px solid var(--linea); }
+#cabecera h1 { margin: 0; }
+
+/* La ficha va ARRIBA y no al final del panel: el clic ocurre en el lienzo y la
+   respuesta tiene que estar donde se mira, no detrás de diecisiete assets. */
+#ficha:not(:empty) { position: relative; margin-bottom: 1rem; padding: .75rem .9rem;
+  border: 1px solid var(--acento); border-radius: 4px;
+  background: color-mix(in srgb, var(--acento) 7%, transparent); }
+#ficha h4 { margin: 0 0 .4rem; font-size: .95rem; color: var(--acento); }
+#ficha .ficha { display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; }
+#ficha dt { color: var(--tenue); }
+#ficha dd { margin: 0; }
+.cerrar { position: absolute; top: .4rem; right: .5rem; background: none; border: 0;
+  color: var(--tenue); cursor: pointer; font-size: .9rem; padding: .1rem .3rem; }
+.cerrar:hover { color: var(--texto); }
+
+#modo-color { width: 100%; margin: .3rem 0 .5rem; padding: .3rem; font: inherit;
+  background: var(--fondo); color: var(--texto); border: 1px solid var(--linea);
+  border-radius: 3px; }
+
+/* --- capas del campo gaussiano ------------------------------------------- */
+.capas { border: 1px solid var(--linea); border-radius: 4px; padding: .6rem .7rem; }
+.capas label { display: block; margin: .35rem 0; cursor: pointer; }
+.capas small { display: block; color: var(--tenue); margin-left: 1.4rem; }
+.capas input[type="range"] { width: 100%; }
+.med { color: var(--acento); font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .06em; }
+
+/*
+ * Las capas del campo van plegadas: es una vista previa cruda del dato —sprites inflados,
+ * falso color— y desplegada se comía el panel entero por delante de lo que sí se mira.
+ * Se deja a un clic, no escondida: el contenedor trae esos assets y el visor tiene que
+ * demostrar que los lee.
+ */
+.capas-caja > summary { cursor: pointer; font-size: .78rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--tenue); margin: 1.25rem 0 .4rem; }
+.capas-caja > summary:hover { color: var(--texto); }
