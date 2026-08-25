@@ -82,9 +82,6 @@ li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
   color: var(--tenue); cursor: pointer; font-size: .9rem; padding: .1rem .3rem; }
 .cerrar:hover { color: var(--texto); }
 
-#modo-color { width: 100%; margin: .3rem 0 .5rem; padding: .3rem; font: inherit;
-  background: var(--fondo); color: var(--texto); border: 1px solid var(--linea);
-  border-radius: 3px; }
 
 /* --- capas del campo gaussiano ------------------------------------------- */
 .capas { border: 1px solid var(--linea); border-radius: 4px; padding: .6rem .7rem; }
@@ -103,3 +100,15 @@ li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
 .capas-caja > summary { cursor: pointer; font-size: .78rem; letter-spacing: .08em;
   text-transform: uppercase; color: var(--tenue); margin: 1.25rem 0 .4rem; }
 .capas-caja > summary:hover { color: var(--texto); }
+
+/*
+ * Sacar un asset al disco es un export, y el §8 del spec pide verificar el hash en un
+ * export. El boton refleja los tres estados posibles —verificando, guardado, hash malo—
+ * porque un fallo de integridad silencioso es peor que no ofrecer la descarga.
+ */
+button.guardar { font: inherit; font-size: .68rem; padding: .1rem .4rem; margin-left: .3rem;
+  background: transparent; color: var(--tenue); border: 1px solid var(--linea);
+  border-radius: 3px; cursor: pointer; }
+button.guardar:hover:not(:disabled) { color: var(--acento); border-color: var(--acento); }
+button.guardar:disabled { cursor: progress; }
+button.guardar.malo { color: var(--grave); border-color: var(--grave); }

@@ -47,6 +47,7 @@ demás está por hacer y aquí queda escrito cuál es cuál, para que nadie lo d
 | `UosLoader`: manifiesto, `load_priority`, carga perezosa | **sí** |
 | `ZipRangeReader` (HTTP / `File` / disco) | **sí** |
 | Verificación `sha256` por asset, a petición | **sí** |
+| Sacar un asset al disco, verificando el hash antes (§8: export ⇒ obligatoria) | **sí** |
 | Grafo de marcos: los que no conectan con el canónico se declaran | **sí** |
 | Vistas guardadas (§7): aplicar una a la cámara | **sí** |
 | Assets-directorio (serie DICOM): un corte suelto por rango | **sí** |

@@ -12,7 +12,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Mesh } from 'three';
 
 import type { CapaClinica, Pieza } from '../uos/Clinico';
-import type { ModoColor } from './Escena';
 import { fichaDe, porPieza } from '../uos/Clinico';
 import type { MetaSegmentacion } from '../uos/Derivados';
 import { decodificaEtiquetas } from '../uos/Derivados';
@@ -58,6 +57,56 @@ bucle();
  * parecía que el visor no enseñaba lo que dice el informe: se generaba entera y se
  * actualizaba a dos pantallas de scroll del clic. El dato estaba; el sitio no.
  */
+
+/**
+ * Saca un asset del contenedor al disco, VERIFICANDO su `sha256` antes.
+ *
+ * ⚠️ La verificación no es un adorno ni una lentitud gratuita: el §8 del spec la deja como
+ * política del cliente —opcional al visualizar, **obligatoria en ingesta y export**— y
+ * sacar un fichero del contenedor **es un export**. Es justo el momento en que alguien se
+ * lleva el STL a una impresora 3D, así que es justo el momento en que hay que poder
+ * afirmar que lo que sale es byte a byte lo que el manifiesto declara.
+ *
+ * Si el hash no cuadra NO se guarda. Un fichero que no es el que dice ser, entregado igual
+ * con un aviso al lado, se convierte en el fichero bueno en cuanto el aviso se cierra.
+ */
+async function guarda(uos: UosLoader, boton: HTMLButtonElement): Promise<void> {
+  const id = boton.dataset['guardar']!;
+  const asset = uos.porPrioridad.find((a) => a.id === id);
+  if (!asset) return;
+
+  const antes = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'verificando…';
+  try {
+    const bytes = await uos.bytes(asset);
+    if (!(await uos.verifica(asset))) {
+      boton.textContent = 'hash NO cuadra';
+      boton.classList.add('malo');
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([bytes as BlobPart], { type: asset.media_type }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = asset.uri.split('/').pop() || asset.id;
+    a.click();
+    // Revocar en el mismo tick cancela la descarga en algunos navegadores.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    boton.textContent = 'guardado ✓';
+  } catch (e) {
+    boton.textContent = e instanceof Error ? e.message.slice(0, 40) : 'falló';
+    boton.classList.add('malo');
+  } finally {
+    setTimeout(() => {
+      boton.disabled = false;
+      boton.textContent = antes;
+      boton.classList.remove('malo');
+    }, 4000);
+  }
+}
+
 function dibujaFicha(fdi: number | null): void {
   if (!hayEtiquetas) {
     ficha.innerHTML = '';
@@ -260,7 +309,12 @@ async function abre(fichero: File): Promise<void> {
             <code>${a.uri}</code>
             <span class="b">${(a.bytes / 1e6).toFixed(1)} MB</span>
             ${a.parts ? `<span class="b">${a.parts.length} partes</span>` : ''}
-            <span class="f">${a.frame}</span></li>`,
+            <span class="f">${a.frame}</span>
+            ${
+              a.uri.endsWith('/')
+                ? ''
+                : `<button class="guardar" data-guardar="${a.id}">guardar</button>`
+            }</li>`,
         )
         .join('')}</ul>
       <h3>Registraciones</h3>
@@ -320,17 +374,12 @@ async function abre(fichero: File): Promise<void> {
         meta
           ? `<h3>Derivados · inferencia</h3>
              <div class="derived">
-               <label for="modo-color">color de la malla</label>
-               <select id="modo-color">
-                 <option value="anatomico" selected>marfil (arcada entera)</option>
-                 <option value="segmentacion">falso color por pieza</option>
-                 <option value="neutro">neutro (sin pintar)</option>
-               </select>
-               <p class="nota">⚠️ La encía va del <b>mismo marfil</b> que el diente, no de
-                 rosa. Pintar dos colores afirmaría saber dónde acaba uno y empieza el otro,
-                 y estas etiquetas son inferencia: 11 de 14 piezas se pasan de su caja
-                 anatómica. Un STL no lleva color; medir esa frontera exige las fotos
-                 intraorales, que el contenedor ya trae.</p>
+               <p class="nota">⚠️ La malla se pinta de <b>un solo marfil</b>, encía
+                 incluida. Pintar dos colores afirmaría saber dónde acaba uno y empieza el
+                 otro, y estas etiquetas son inferencia: 11 de 14 piezas se pasan de su
+                 caja anatómica. Un STL no lleva color; medir esa frontera exige las fotos
+                 intraorales, que el contenedor ya trae. Las etiquetas se usan sólo para
+                 encender la pieza seleccionada, que es lo que sí sostienen.</p>
                <p class="l3">Layer ${meta.regulatory.layer} · ${meta.regulatory.status}</p>
                <p class="nota">${meta.model.name} ${meta.model.version} ·
                  ${meta.labels.present.length} piezas ·
@@ -382,13 +431,12 @@ async function abre(fichero: File): Promise<void> {
     for (const cb of panel.querySelectorAll<HTMLInputElement>('input[data-capa]')) {
       cb.addEventListener('change', () => splats.enciende(cb.dataset['capa']!, cb.checked));
     }
+    for (const b of panel.querySelectorAll<HTMLButtonElement>('button[data-guardar]')) {
+      b.addEventListener('click', () => void guarda(uos, b));
+    }
+
     const ganancia = panel.querySelector<HTMLInputElement>('#ganancia');
     ganancia?.addEventListener('input', () => splats.ponGanancia(Number(ganancia.value)));
-
-    const selector = panel.querySelector<HTMLSelectElement>('#modo-color');
-    selector?.addEventListener('change', () =>
-      escena.ponModo(selector.value as ModoColor),
-    );
 
     segmentador = meta?.model.name ?? '';
     hayEtiquetas = meta !== null;

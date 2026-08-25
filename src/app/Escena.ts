@@ -11,13 +11,13 @@
  * puesto se lee como una fisura. Gris mate, luz difusa y el color de verdad —cuando lo
  * haya— llegará por la capa de apariencia.
  *
- * ⚠️ **Y el color anatómico —diente hueso, encía rosa— NO es color medido.** Sale de las
- * etiquetas de `derived/`, que son inferencia (Layer 3). Es el modo más peligroso de los
- * tres justamente porque es el que MEJOR se ve: un falso color chillón se lee como lo que
- * es, y un rosa creíble se lee como si el escáner lo hubiera medido. Un escáner intraoral
- * sí puede medir color —el caso Bite2Text del otro visor lo hace, muestreando las fotos
- * intraorales— pero un STL no lo lleva, y este contenedor viene de un STL. Por eso el modo
- * se declara en el panel y no se presenta como si viniera del paciente.
+ * ⚠️ **Y no hay color medido en ninguna parte, así que no se finge.** Hubo tres modos de
+ * color —marfil, falso color por pieza y sin pintar— y quedó uno. El peligroso era el
+ * creíble: un falso color chillón se lee como lo que es, pero un rosa de encía se lee como
+ * si el escáner lo hubiera medido, y salía de `derived/`, que es inferencia (Layer 3). Un
+ * escáner intraoral sí puede medir color —el caso Bite2Text del otro visor lo hace,
+ * muestreando las fotos intraorales— pero un STL no lo lleva, y este contenedor viene de
+ * un STL. Mientras eso siga así, un tono para toda la malla.
  */
 
 import {
@@ -39,17 +39,6 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-import { colorDe } from '../uos/Derivados';
-
-/**
- * Cómo se pinta la malla.
- *
- * - `neutro`: el gris del material. Lo único que no afirma nada, y lo que queda cuando el
- *   contenedor no trae `derived/` — que es legal y frecuente: la capa es strippable.
- * - `anatomico`: la arcada entera en marfil, sin distinguir encía. Ver `COLOR_MARFIL`.
- * - `segmentacion`: un tono por código FDI. Feo a propósito: es falso color y lo parece.
- */
-export type ModoColor = 'neutro' | 'anatomico' | 'segmentacion';
 
 /**
  * Marfil: hueso cálido, no blanco. Un diente blanco puro sólo existe blanqueado.
@@ -63,11 +52,10 @@ export type ModoColor = 'neutro' | 'anatomico' | 'segmentacion';
  *
  * Un solo tono no afirma ninguna frontera. Cuando la frontera esté medida —del color de
  * la fotografía clínica, no de la geometría— volverá el segundo color, y entonces
- * significará algo. El modo `segmentacion` sigue enseñando la verdad sin maquillar.
+ * significará algo. Hasta entonces la malla se pinta de UN color y las etiquetas sólo se
+ * usan para lo que sí sostienen: encender la pieza que se ha seleccionado.
  */
 const COLOR_MARFIL: [number, number, number] = [0.925, 0.894, 0.824];
-/** Lo que la segmentación no asignó. Ni diente ni encía: se queda neutro y se nota. */
-const COLOR_SIN_ASIGNAR: [number, number, number] = [0.85, 0.83, 0.8];
 /**
  * Cuánto se apaga lo que no es la pieza resaltada.
  *
@@ -89,7 +77,6 @@ export class Escena {
   private readonly rayo = new Raycaster();
   private malla: Mesh | null = null;
   private etiquetas: Int16Array | null = null;
-  private modo: ModoColor = 'anatomico';
   private resaltada: number | null = null;
 
   constructor(private readonly lienzo: HTMLCanvasElement) {
@@ -225,12 +212,6 @@ export class Escena {
     this.repinta();
   }
 
-  /** Cambia el modo de color. `neutro` vuelve al gris del material. */
-  ponModo(modo: ModoColor): void {
-    this.modo = modo;
-    this.repinta();
-  }
-
   /**
    * Enciende una pieza y apaga el resto. `null` las devuelve todas.
    *
@@ -248,7 +229,10 @@ export class Escena {
     if (!this.malla) return;
     const material = this.malla.material as MeshStandardMaterial;
     const etq = this.etiquetas;
-    if (!etq || this.modo === 'neutro') {
+    // Sin `derived/` no hay etiquetas, y entonces la malla se queda con el gris del
+    // material. No es un modo degradado: un `.uos` sin capa de inferencia es legal y
+    // frecuente, y lo correcto ahí es no pintar nada por vértice.
+    if (!etq) {
       material.vertexColors = false;
       material.needsUpdate = true;
       return;
@@ -257,14 +241,7 @@ export class Escena {
     const color = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const fdi = etq[i]!;
-      // Sin etiqueta NO se inventa nada: un vértice sin asignar no es una pieza más, y en
-      // modo anatómico tampoco es encía — la encía es lo que la segmentación llama encía.
-      let c: [number, number, number] =
-        this.modo === 'anatomico'
-          ? COLOR_MARFIL
-          : fdi > 0
-            ? colorDe(fdi)
-            : COLOR_SIN_ASIGNAR;
+      let c: [number, number, number] = COLOR_MARFIL;
       if (this.resaltada !== null && fdi !== this.resaltada) {
         c = [c[0] * APAGADO, c[1] * APAGADO, c[2] * APAGADO];
       }
