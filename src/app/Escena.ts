@@ -10,6 +10,14 @@
  * inventa relieve donde no lo hay: en una malla de escáner intraoral, un especular mal
  * puesto se lee como una fisura. Gris mate, luz difusa y el color de verdad —cuando lo
  * haya— llegará por la capa de apariencia.
+ *
+ * ⚠️ **Y el color anatómico —diente hueso, encía rosa— NO es color medido.** Sale de las
+ * etiquetas de `derived/`, que son inferencia (Layer 3). Es el modo más peligroso de los
+ * tres justamente porque es el que MEJOR se ve: un falso color chillón se lee como lo que
+ * es, y un rosa creíble se lee como si el escáner lo hubiera medido. Un escáner intraoral
+ * sí puede medir color —el caso Bite2Text del otro visor lo hace, muestreando las fotos
+ * intraorales— pero un STL no lo lleva, y este contenedor viene de un STL. Por eso el modo
+ * se declara en el panel y no se presenta como si viniera del paciente.
  */
 
 import {
@@ -18,6 +26,7 @@ import {
   BufferGeometry,
   BufferAttribute,
   DirectionalLight,
+  HemisphereLight,
   Mesh,
   DoubleSide,
   MeshStandardMaterial,
@@ -32,6 +41,43 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 import { colorDe } from '../uos/Derivados';
 
+/**
+ * Cómo se pinta la malla.
+ *
+ * - `neutro`: el gris del material. Lo único que no afirma nada, y lo que queda cuando el
+ *   contenedor no trae `derived/` — que es legal y frecuente: la capa es strippable.
+ * - `anatomico`: la arcada entera en marfil, sin distinguir encía. Ver `COLOR_MARFIL`.
+ * - `segmentacion`: un tono por código FDI. Feo a propósito: es falso color y lo parece.
+ */
+export type ModoColor = 'neutro' | 'anatomico' | 'segmentacion';
+
+/**
+ * Marfil: hueso cálido, no blanco. Un diente blanco puro sólo existe blanqueado.
+ *
+ * ⚠️ **Y la encía va del mismo color a propósito.** Había un coral para la encía, y
+ * pintar dos colores es afirmar que se sabe dónde acaba uno y empieza el otro. Hoy no se
+ * sabe: medido sobre un caso real, 11 de las 14 piezas se pasan de su caja anatómica
+ * porque la corona se come el margen gingival, así que el rosa no dibujaba la encía —
+ * dibujaba el error de la segmentación, y al revés (la encía comida salía color diente).
+ * Ver `docs/research/segmentacion-fdi-escaner.md` del monorepo.
+ *
+ * Un solo tono no afirma ninguna frontera. Cuando la frontera esté medida —del color de
+ * la fotografía clínica, no de la geometría— volverá el segundo color, y entonces
+ * significará algo. El modo `segmentacion` sigue enseñando la verdad sin maquillar.
+ */
+const COLOR_MARFIL: [number, number, number] = [0.925, 0.894, 0.824];
+/** Lo que la segmentación no asignó. Ni diente ni encía: se queda neutro y se nota. */
+const COLOR_SIN_ASIGNAR: [number, number, number] = [0.85, 0.83, 0.8];
+/**
+ * Cuánto se apaga lo que no es la pieza resaltada.
+ *
+ * ⚠️ Estaba en 0,34 y era demasiado: la arcada entera se iba a un gris plano y dejaba de
+ * leerse como anatomía, hasta el punto de parecer un fallo de iluminación. Lo que hace
+ * falta es que la pieza destaque, no que el resto desaparezca — el clínico mira una pieza
+ * EN una boca, y el contexto es la mitad de la información.
+ */
+const APAGADO = 0.62;
+
 /** El del spec (§7) y el de la distancia que declaran las vistas. */
 export const FOV_GRADOS = 35;
 
@@ -43,23 +89,38 @@ export class Escena {
   private readonly rayo = new Raycaster();
   private malla: Mesh | null = null;
   private etiquetas: Int16Array | null = null;
+  private modo: ModoColor = 'anatomico';
+  private resaltada: number | null = null;
 
   constructor(private readonly lienzo: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas: lienzo, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.camera = new PerspectiveCamera(FOV_GRADOS, 1, 0.1, 5000);
-    this.scene.add(new AmbientLight(0xffffff, 1.4));
-    // Dos luces opuestas: con `DoubleSide`, la cara interior de la bóveda tiene la normal
-    // mirando al lado contrario que la exterior, así que una sola direccional la deja a
-    // oscuras y el agujero seguiría pareciendo un agujero.
-    for (const d of [
-      [1, 1, 1],
-      [-1, -1, -1],
-    ] as const) {
-      const luz = new DirectionalLight(0xffffff, 0.8);
-      luz.position.set(d[0], d[1], d[2]);
-      this.scene.add(luz);
-    }
+    // ⚠️ **Las luces van pegadas a la CÁMARA, no al mundo.** Antes había dos
+    // direccionales en `(1,1,1)` y `(-1,-1,-1)`, que son opuestas y por tanto **el mismo
+    // eje**: todo lo que tuviera la normal perpendicular a él —o sea un anillo entero de
+    // orientaciones— no recibía luz de ninguna y se quedaba con el ambiente a secas. En
+    // una arcada eso es casi todo: los incisivos centrales miraban por casualidad hacia
+    // ese eje y salían blancos, y los premolares y molares salían gris oscuro. Se leía
+    // como que el color no distinguía diente de encía, y lo que no había era luz.
+    //
+    // Con la luz solidaria a la cámara, lo que miras está iluminado se mire desde donde
+    // se mire. Y con `DoubleSide` vale también para la cara interior de la bóveda, porque
+    // three invierte la normal al sombrear una cara trasera.
+    this.scene.add(new AmbientLight(0xffffff, 0.55));
+    // Cielo/suelo: da una caída suave que un ambiente plano no da, y evita que las caras
+    // que miran hacia abajo queden del mismo tono exacto que las que miran hacia arriba.
+    this.scene.add(new HemisphereLight(0xdfe7f2, 0x4a4038, 0.75));
+    // Principal ligeramente descentrada: puesta justo en el eje de la cámara aplanaría el
+    // relieve, que en una superficie oclusal es justo lo que hay que ver.
+    const principal = new DirectionalLight(0xffffff, 1.05);
+    principal.position.set(-0.45, 0.7, 1);
+    this.camera.add(principal);
+    const relleno = new DirectionalLight(0xffffff, 0.35);
+    relleno.position.set(0.8, -0.4, 0.6);
+    this.camera.add(relleno);
+    // La cámara tiene que estar EN la escena o sus hijas no se recorren al renderizar.
+    this.scene.add(this.camera);
 
     // ⚠️ La orbita gira alrededor de `camera.up`, y ese vector lo pone cada VISTA: las del
     // `.uos` traen el eje superior medido de las etiquetas FDI. Sin esto se orbitaria
@@ -161,25 +222,59 @@ export class Escena {
       );
     }
     this.etiquetas = etiquetas;
+    this.repinta();
+  }
+
+  /** Cambia el modo de color. `neutro` vuelve al gris del material. */
+  ponModo(modo: ModoColor): void {
+    this.modo = modo;
+    this.repinta();
+  }
+
+  /**
+   * Enciende una pieza y apaga el resto. `null` las devuelve todas.
+   *
+   * ⚠️ Apagar en vez de rodear con un borde es una decisión, no una preferencia estética:
+   * el contorno de un diente sobre una malla de escáner cae en el margen gingival, que es
+   * justo la frontera clínica que interesa mirar. Un borde dibujado encima la tapa; bajar
+   * el brillo de lo demás la deja intacta.
+   */
+  resalta(fdi: number | null): void {
+    this.resaltada = fdi;
+    this.repinta();
+  }
+
+  private repinta(): void {
+    if (!this.malla) return;
+    const material = this.malla.material as MeshStandardMaterial;
+    const etq = this.etiquetas;
+    if (!etq || this.modo === 'neutro') {
+      material.vertexColors = false;
+      material.needsUpdate = true;
+      return;
+    }
+    const n = this.malla.geometry.getAttribute('position').count;
     const color = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
-      const fdi = etiquetas[i]!;
-      // Sin etiqueta se queda el gris del material: NO se le inventa un color, porque un
-      // vértice sin asignar no es una pieza más.
-      const c: [number, number, number] = fdi > 0 ? colorDe(fdi) : [0.85, 0.83, 0.8];
+      const fdi = etq[i]!;
+      // Sin etiqueta NO se inventa nada: un vértice sin asignar no es una pieza más, y en
+      // modo anatómico tampoco es encía — la encía es lo que la segmentación llama encía.
+      let c: [number, number, number] =
+        this.modo === 'anatomico'
+          ? COLOR_MARFIL
+          : fdi > 0
+            ? colorDe(fdi)
+            : COLOR_SIN_ASIGNAR;
+      if (this.resaltada !== null && fdi !== this.resaltada) {
+        c = [c[0] * APAGADO, c[1] * APAGADO, c[2] * APAGADO];
+      }
       color[i * 3] = c[0];
       color[i * 3 + 1] = c[1];
       color[i * 3 + 2] = c[2];
     }
     this.malla.geometry.setAttribute('color', new BufferAttribute(color, 3));
-  }
-
-  /** Enciende o apaga el falso color de la segmentación. */
-  muestraEtiquetas(visible: boolean): void {
-    if (!this.malla || !this.etiquetas) return;
-    const m = this.malla.material as MeshStandardMaterial;
-    m.vertexColors = visible;
-    m.needsUpdate = true;
+    material.vertexColors = true;
+    material.needsUpdate = true;
   }
 
   /**
