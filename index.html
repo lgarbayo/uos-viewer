@@ -4,35 +4,91 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>uos-viewer</title>
+    <!--
+      La display del documento «Unified Oral Scene». Va SOLO en la marca, la portada y el
+      boton de abrir: el resto del visor es monoespaciado porque enseña codigos FDI,
+      hashes y L*a*b* en columna, y ahi la anchura fija es lo que deja comparar dos filas.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"
+    />
     <link rel="stylesheet" href="/src/app/style.css" />
   </head>
   <body>
     <canvas id="lienzo"></canvas>
-    <aside id="panel">
-      <!--
-        La cabecera y la ficha viven FUERA de `#contenido` a propósito: `#contenido` se
-        reemplaza entero al abrir un caso, y con el input de fichero dentro no había forma
-        de abrir un segundo `.uos` sin recargar la página.
-      -->
-      <header id="cabecera">
-        <h1>uos-viewer</h1>
-        <label class="boton">
-          abrir <code>.uos</code>
-          <input id="fichero" type="file" accept=".uos" hidden />
-        </label>
-      </header>
-      <div id="ficha"></div>
-      <div id="contenido">
-        <p>
-          Visor de referencia del formato <b>Unified Oral Scene</b>. Arrastra un
-          <code>.uos</code> aquí, o ábrelo con el botón de arriba.
-        </p>
-        <p class="nota">
-          Nada sale de tu navegador: el contenedor se lee en local, por rangos, sin subirlo
-          a ningún sitio.
-        </p>
+
+    <!--
+      La barra superior lleva SOLO lo que identifica el contenedor abierto: caso, estado
+      PHI, version del formato y quien lo genero. Es lo unico que un clinico necesita ver
+      permanentemente; todo lo demas se pide y se cierra.
+    -->
+    <header id="barra">
+      <div id="marca">uos<span>-viewer</span></div>
+      <div id="identidad"></div>
+      <label class="boton">
+        abrir <code>.uos</code>
+        <input id="fichero" type="file" accept=".uos" hidden />
+      </label>
+    </header>
+
+    <!--
+      Las cuatro esquinas. Cada una abre un modal y ninguna deja informacion delante del
+      modelo: el lienzo es lo que se mira, y el panel lateral que habia antes tapaba un
+      tercio de la pantalla con diecisiete assets que nadie consulta en consulta.
+    -->
+    <!--
+      Lo que se usa CONTINUAMENTE no se pide: esta puesto. Las vistas generales y el
+      odontograma eran dos modales y no debian serlo — se tocan cada pocos segundos
+      mientras se mira una arcada, y un modal que se abre y se cierra a ese ritmo es una
+      friccion, no una interfaz. Lo que sigue detras de un boton es lo que se consulta una
+      vez: que lleva el contenedor y que dice el informe.
+    -->
+    <nav id="esquinas">
+      <button class="dock ar" data-modal="contenedor" hidden>
+        Contenedor <span class="cuenta" data-cuenta="contenedor"></span>
+      </button>
+      <button class="dock ar2" data-modal="clinico" hidden>
+        Clínico <span class="cuenta" data-cuenta="clinico"></span>
+      </button>
+    </nav>
+
+    <!-- Las vistas GENERALES. Las de cada pieza viven en el odontograma, que es donde se
+         busca un diente. -->
+    <div id="vistas-barra" hidden></div>
+
+    <!-- La ficha de la pieza seleccionada: flota sobre el lienzo, junto al diente. -->
+    <div id="ficha"></div>
+
+    <!-- El odontograma, siempre a la vista: es el indice del caso. -->
+    <div id="odontograma" hidden></div>
+
+    <!-- Estado inicial y errores. Se oculta en cuanto hay un contenedor abierto. -->
+    <div id="portada">
+      <div class="marca">Unified Oral Scene</div>
+      <p class="titular">Arrastra un <b>.uos</b> aquí</p>
+      <p>
+        Visor de referencia del formato. Abre el contenedor sin saber nada de quién lo
+        escribió: lee el manifiesto, ordena los assets y aplica una vista guardada.
+      </p>
+      <p class="nota">
+        Nada sale de tu navegador: el contenedor se lee en local, por rangos, sin subirlo a
+        ningún sitio.
+      </p>
+    </div>
+
+    <div id="modal" hidden>
+      <div id="caja-modal" role="dialog" aria-modal="true" aria-labelledby="titulo-modal">
+        <header>
+          <h2 id="titulo-modal"></h2>
+          <button id="cierra-modal" title="cerrar (Esc)">✕</button>
+        </header>
+        <div id="cuerpo-modal"></div>
       </div>
-    </aside>
+    </div>
+
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

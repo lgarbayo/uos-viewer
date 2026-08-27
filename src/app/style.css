@@ -1,114 +1,399 @@
+/*
+ * Visor de referencia del `.uos`, con la disposicion de un software de clinica.
+ *
+ * ⚠️ **Por que ya no hay columna lateral.** Todo esto vivia en un `<aside>` de 27 rem a la
+ * derecha, en una sola columna con scroll: manifiesto, diecinueve assets, registraciones,
+ * capas, vistas, inferencia, clinico y diecisiete motivos de revision. Delante del
+ * paciente eso no se lee — se hace scroll buscando el dato y se abandona. Aqui el lienzo
+ * ocupa la pantalla entera y la informacion se pide por esquinas: cuatro modales, cada uno
+ * con UN tema, y el que no se ha pedido no esta.
+ */
+
+/*
+ * La gama es la del documento «Unified Oral Scene», y se toma por SU SEMANTICA, no por
+ * parecido: alli `--medida` es lo que alguien midio, `--senal` lo que pide atencion y
+ * `--inferido` lo que sale de un modelo. Aqui esos tres papeles ya existian con otros
+ * nombres —acento, aviso, grave—, asi que el mapeo es uno a uno y no una recoloracion.
+ *
+ * ⚠️ **La tipografia NO cambia.** El documento usa una serif de display y una sans; este
+ * visor es monoespaciado a proposito, porque casi todo lo que enseña son codigos FDI,
+ * hashes, tamaños y L*a*b* en columna, y ahi la anchura fija es lo que deja comparar dos
+ * filas de un vistazo.
+ */
 :root {
-  --fondo: #0d0f12;
-  --panel: #14181d;
-  --texto: #d7dce2;
-  --tenue: #7d8794;
-  --linea: #232a32;
-  --acento: #4fb8ac;
-  --grave: #d9705a;
+  --fondo: #0e1418;        /* tinta */
+  --panel: #151d23;        /* tinta-2 */
+  --panel-alto: #1b252c;
+  --texto: #e8e4da;        /* hueso */
+  --tenue: #8a9299;
+  --linea: #242f37;
+  --linea-viva: #33414c;
+  --acento: #6fb3a8;       /* medida — lo interactivo y lo que se midio */
+  --grave: #c98080;        /* inferido — lo que incumple o no cuadra */
+  --aviso: #e0a85c;        /* senal — Layer 3, lo que pide leerse con cuidado */
+  --sombra: 0 8px 32px rgb(0 0 0 / .55);
+  /*
+   * ⚠️ **La display va SOLO en tres sitios: marca, portada y boton de abrir.** Son los
+   * unicos que no son dato — son identidad y una instruccion, y se leen de lejos con la
+   * pantalla vacia detras. Todo lo demas sigue monoespaciado a proposito: codigos FDI,
+   * hashes, tamaños y L*a*b* en columna, donde la anchura fija es lo que deja comparar
+   * dos filas de un vistazo. Meter la serif ahi rompería precisamente eso.
+   */
+  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  /* El negro de la portada. Es mas negro que `--fondo` a proposito: ahi no hay modelo que
+     iluminar, solo dos colores —negro y ambar— y el contraste es todo lo que hay. */
+  --negro: #08090a;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--texto);
-  font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--fondo); color: var(--texto);
+  font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
 #lienzo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-#panel { position: fixed; top: 0; right: 0; width: 27rem; max-width: 100vw; height: 100%;
-  overflow-y: auto; padding: 1.25rem; background: color-mix(in srgb, var(--panel) 92%, transparent);
-  border-left: 1px solid var(--linea); backdrop-filter: blur(6px); }
-h1 { font-size: 1.05rem; margin: 0 0 .75rem; letter-spacing: .04em; }
-h2 { font-size: .82rem; color: var(--acento); word-break: break-all; margin: 0 0 .4rem; }
-h3 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
-  color: var(--tenue); margin: 1.25rem 0 .4rem; }
+
+/*
+ * ⚠️ **`display` en una regla GANA al atributo `hidden`, y eso rompio el visor entero.**
+ * `.dock` lleva `display:flex` y `#modal` lleva `display:grid`; con eso, marcarlos
+ * `hidden` desde el HTML no los ocultaba: al cargar la pagina salian las cuatro esquinas
+ * vacias y un modal sin contenido encima de la portada, tapandola. `hidden` es una
+ * afirmacion del documento —«esto no es relevante ahora»— y tiene que poder mas que
+ * cualquier `display` que venga despues.
+ */
+[hidden] { display: none !important; }
 code { color: var(--acento); }
-dl { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: .5rem 0; }
-dt { color: var(--tenue); }
-dd { margin: 0; }
-ul { list-style: none; padding: 0; margin: 0; }
-li { padding: .3rem 0; border-bottom: 1px solid var(--linea); }
-.assets .k, .b, .f { display: inline-block; font-size: .72rem; color: var(--tenue);
-  margin-left: .4rem; }
-.assets .k { color: var(--acento); }
-.prov { color: var(--grave); font-size: .72rem; margin-left: .4rem; }
-.sinver { color: #c9a227; font-size: .72rem; margin-left: .4rem; }
-.phi { display: inline-block; padding: .1rem .45rem; border: 1px solid var(--linea);
-  border-radius: 3px; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+.nota { color: var(--tenue); font-size: .87em; }
+.error { color: var(--grave); }
+/*
+ * ⚠️ **Era un enlace subrayado de 13 px y es la unica accion de toda la barra.** Con la
+ * pantalla vacia detras, la unica cosa que se puede hacer no puede parecer una nota al
+ * pie. Ahora es un boton con su caja, en ambar sobre negro.
+ */
+.boton { font-family: var(--display); font-size: 1.5rem; line-height: 1;
+  color: var(--negro); background: var(--aviso); border: 1px solid var(--aviso);
+  border-radius: 3px; padding: .45rem 1.1rem .55rem; cursor: pointer; flex: none;
+  text-decoration: none; transition: background .12s, color .12s; }
+.boton code { color: inherit; font-family: var(--display); font-style: italic; }
+.boton:hover { background: transparent; color: var(--aviso); }
+
+/* --- barra superior ------------------------------------------------------ */
+/* Lo permanente: que contenedor esta abierto y con que regimen. Nada mas. */
+#barra {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30; height: 3.9rem;
+  display: flex; align-items: center; gap: 1.3rem; padding: 0 1.1rem;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border-bottom: 1px solid var(--linea); backdrop-filter: blur(8px);
+}
+#marca { font-family: var(--display); font-size: 2.2rem; line-height: 1;
+  letter-spacing: 0; color: var(--aviso); flex: none; padding-bottom: .2rem; }
+#marca span { color: var(--texto); font-style: italic; }
+#identidad { display: flex; align-items: baseline; gap: .85rem; flex: 1 1 auto;
+  min-width: 0; overflow: hidden; }
+#identidad .caso { color: var(--acento); font-size: 1.15rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#identidad .campo { color: var(--tenue); font-size: .98rem; white-space: nowrap; }
+#identidad .campo b { color: var(--texto); font-weight: 400; }
+.phi { display: inline-block; padding: .15rem .55rem; border: 1px solid var(--linea-viva);
+  border-radius: 3px; font-size: .88rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tenue); flex: none; }
 .phi-identified, .phi-quarantined { color: var(--grave); border-color: var(--grave); }
-.vistas button { width: 100%; text-align: left; background: none; color: var(--texto);
-  border: 0; padding: .1rem 0; font: inherit; cursor: pointer; }
-.vistas button:hover { color: var(--acento); }
-.reparos .grave, .error { color: var(--grave); }
-.nota { color: var(--tenue); font-size: .78rem; }
-.boton { color: var(--acento); cursor: pointer; text-decoration: underline; }
 
-/* `derived/` — Layer 3. Se distingue del resto del panel a propósito: lo que sale de un
-   modelo no debe leerse igual que lo que alguien midió. */
-.derived { border: 1px solid var(--linea); border-left: 2px solid #c9a227;
-  padding: .5rem .6rem; margin: .35rem 0; }
-.derived label { cursor: pointer; }
-.l3 { color: #c9a227; font-size: .72rem; letter-spacing: .06em;
-  text-transform: uppercase; margin: .35rem 0 .2rem; }
-.derived .nota { margin: .15rem 0; }
-.pieza { color: var(--acento); margin: .4rem 0; min-height: 1.2em; }
+/* --- portada ------------------------------------------------------------- */
+/*
+ * ⚠️ **Es lo unico que se lee de lejos, y estaba a 13 px.** Cuando no hay contenedor
+ * abierto esta pantalla es todo lo que hay: la instruccion de que hacer y la unica
+ * afirmacion que importa —que el fichero no sale del navegador—. A tamaño de dato, con la
+ * pantalla vacia detras, no se leia como una instruccion sino como un pie de pagina.
+ */
+/*
+ * ⚠️ **Aqui solo hay dos colores: negro y ambar.** No hay modelo detras que iluminar ni
+ * dato que distinguir por tono, asi que la paleta semantica del visor —lo medido en verde,
+ * lo inferido en rojo— no tiene nada que hacer: sobre una pantalla vacia lo unico que
+ * ordena es el contraste. El titular va en la display del documento y a tamaño de titular
+ * de verdad, porque es una INSTRUCCION y es lo primero que alguien lee de este software.
+ */
+#portada { position: fixed; inset: 0; z-index: 5; background: var(--negro);
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 1.8rem; padding: 4rem clamp(1.5rem, 6vw, 5rem); text-align: center; }
+#portada .marca { font-size: 1.15rem; letter-spacing: .3em; text-transform: uppercase;
+  color: var(--aviso); }
+#portada .titular { font-family: var(--display); font-weight: 400;
+  font-size: clamp(3.6rem, 11vw, 9.5rem); line-height: .96; letter-spacing: -.02em;
+  color: var(--texto); margin: 0; text-wrap: balance; }
+#portada .titular b { color: var(--aviso); font-weight: 400; font-style: italic; }
+#portada p { margin: 0; font-size: clamp(1.35rem, 1.9vw, 1.75rem); line-height: 1.6;
+  max-width: 48ch; color: var(--texto); }
+#portada .nota { font-size: clamp(1.1rem, 1.5vw, 1.4rem); color: var(--tenue);
+  max-width: 54ch; }
+#portada .error { font-size: clamp(1.1rem, 1.6vw, 1.5rem); max-width: 64ch;
+  text-align: left; font-family: inherit; line-height: 1.55; }
 
-/* La ficha de una pieza. Va dentro del bloque de derivados pero con su propio fondo:
-   lo clínico es Layer 1 y la segmentación Layer 3, y no deben leerse igual. */
-.pieza { background: rgba(79,184,172,.06); border: 1px solid var(--linea);
-  padding: .5rem .6rem; margin: .4rem 0; min-height: 2rem; }
-.pieza h4 { margin: 0 0 .3rem; font-size: .84rem; color: var(--acento); }
-.ficha { display: grid; grid-template-columns: auto 1fr; gap: 0 .75rem; margin: .2rem 0; }
-.hueco { color: var(--tenue); font-size: .78rem; margin: .2rem 0; }
-.medidas li, .gate li { font-size: .78rem; }
-.medidas .fuera b { color: var(--grave); }
-.gate li { color: var(--tenue); }
+/* --- las cuatro esquinas ------------------------------------------------- */
+/*
+ * Cada esquina es UN tema y lleva su cuenta al lado: cuantos assets, cuantas piezas,
+ * cuantas vistas, cuantos motivos de revision. La cuenta es lo que permite decidir si
+ * merece la pena abrirlo sin abrirlo.
+ */
+.dock {
+  position: fixed; z-index: 20; display: flex; align-items: center; gap: .45rem;
+  font: inherit; font-size: .95rem; letter-spacing: .06em; text-transform: uppercase;
+  padding: .5rem .85rem; cursor: pointer; color: var(--texto);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--linea-viva); border-radius: 4px;
+  backdrop-filter: blur(8px); transition: border-color .12s, color .12s;
+}
+.dock:hover { color: var(--acento); border-color: var(--acento); }
+.dock .cuenta { color: var(--tenue); font-size: .88rem; letter-spacing: 0; }
+.dock.aviso-grave { border-color: var(--grave); }
+.dock.aviso-grave .cuenta { color: var(--grave); }
+.dock.ar { top: 4.6rem; right: .9rem; }
+.dock.ar2 { top: 7.4rem; right: .9rem; }
 
-/* --- cabecera persistente y ficha de pieza ------------------------------- */
-/* La cabecera se queda pegada arriba: es lo que permite abrir un segundo `.uos`
-   sin recargar, y antes vivía dentro del bloque que se reemplaza al abrir uno. */
-#cabecera { position: sticky; top: -1.25rem; z-index: 2; display: flex;
-  align-items: baseline; justify-content: space-between; gap: 1rem;
-  margin: -1.25rem -1.25rem .75rem; padding: 1.25rem 1.25rem .6rem;
-  background: var(--panel); border-bottom: 1px solid var(--linea); }
-#cabecera h1 { margin: 0; }
+/* --- vistas generales, permanentes --------------------------------------- */
+/*
+ * Las cuatro camaras del emisor que no son de una pieza concreta. Van arriba y siempre
+ * puestas porque se alternan constantemente mientras se mira una arcada: oclusal para ver
+ * el plano, vestibular para ver el borde. Estaban detras de un modal y eso obligaba a
+ * abrir y cerrar una ventana entre cada dos miradas.
+ */
+#vistas-barra { position: fixed; z-index: 20; top: 4.6rem; left: .9rem;
+  display: flex; gap: .3rem; flex-wrap: wrap; max-width: min(38rem, 55vw); }
+#vistas-barra button { font: inherit; font-size: .95rem; letter-spacing: .04em;
+  padding: .45rem .8rem; cursor: pointer; color: var(--texto);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--linea-viva); border-radius: 4px; backdrop-filter: blur(8px);
+  transition: border-color .12s, color .12s; }
+#vistas-barra button:hover { color: var(--acento); border-color: var(--acento); }
 
-/* La ficha va ARRIBA y no al final del panel: el clic ocurre en el lienzo y la
-   respuesta tiene que estar donde se mira, no detrás de diecisiete assets. */
-#ficha:not(:empty) { position: relative; margin-bottom: 1rem; padding: .75rem .9rem;
-  border: 1px solid var(--acento); border-radius: 4px;
-  background: color-mix(in srgb, var(--acento) 7%, transparent); }
+/* --- odontograma permanente ---------------------------------------------- */
+/*
+ * El indice del caso, abajo y a lo ancho, como la carta dental de cualquier software de
+ * clinica. Era un modal y ese era el error: es lo que se usa para NAVEGAR —se pincha un
+ * diente, se mira, se pincha otro—, asi que tenerlo que abrir cada vez convertia el gesto
+ * de mirar dos piezas seguidas en cuatro clics.
+ */
+#odontograma { position: fixed; z-index: 18; left: 0; right: 0; bottom: 0;
+  padding: .5rem .9rem .6rem;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border-top: 1px solid var(--linea); backdrop-filter: blur(8px); font-size: 14px; }
+#odontograma .fila { display: flex; align-items: center; gap: .9rem; }
+#odontograma .fila > .arcada { flex: 1 1 0; min-width: 0; margin: 0; }
+#odontograma .leyenda { flex: none; max-width: 14rem; }
+
+/* --- ficha de la pieza seleccionada -------------------------------------- */
+/*
+ * Flota sobre el lienzo, a la izquierda y por encima de su esquina. Responde a un clic
+ * que ocurre en el modelo, asi que tiene que estar donde se esta mirando — no detras de
+ * un modal que hay que abrir.
+ */
+/*
+ * ⚠️ **El hueco se mide, no se supone.** El alto iba en numeros fijos —`bottom: 7.5rem`,
+ * `max-height: 100vh - 12rem`— calculados a ojo contra una barra y un odontograma de
+ * cierto tamaño. Al crecer los dos, la ficha se metia por debajo de la carta dental y su
+ * ultimo parrafo —justo la nota que dice que el color NO es un tono de guia certificado—
+ * quedaba cortado a media frase, sin nada que indicara que habia mas. Ahora el alto real
+ * de la carta se mide al montarla y llega por `--alto-carta`, asi que el hueco es el que
+ * hay y no el que yo creia que habria.
+ */
+#ficha { position: fixed; z-index: 15; left: .9rem; width: 23rem;
+  bottom: calc(var(--alto-carta, 7rem) + .8rem);
+  max-height: calc(100vh - var(--alto-carta, 7rem) - 5.6rem);
+  overflow-y: auto; overscroll-behavior: contain; }
+/* Y cuando de verdad hay mas texto debajo, se ve: una barra fina en vez de un corte seco. */
+#ficha::-webkit-scrollbar { width: 6px; }
+#ficha::-webkit-scrollbar-thumb { background: var(--linea-viva); border-radius: 3px; }
+#ficha { scrollbar-width: thin; scrollbar-color: var(--linea-viva) transparent; }
+#ficha:not(:empty) {
+  padding: .75rem .9rem; border: 1px solid var(--acento); border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(8px); box-shadow: var(--sombra);
+}
 #ficha h4 { margin: 0 0 .4rem; font-size: .95rem; color: var(--acento); }
 #ficha .ficha { display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; }
 #ficha dt { color: var(--tenue); }
 #ficha dd { margin: 0; }
-.cerrar { position: absolute; top: .4rem; right: .5rem; background: none; border: 0;
-  color: var(--tenue); cursor: pointer; font-size: .9rem; padding: .1rem .3rem; }
+#ficha .cerrar { position: absolute; top: .3rem; right: .4rem; }
+.cerrar { background: none; border: 0; color: var(--tenue); cursor: pointer;
+  font-size: .9rem; padding: .1rem .3rem; font-family: inherit; }
 .cerrar:hover { color: var(--texto); }
+.pieza-fdi { margin: 0 0 .4rem; font-size: .8rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--tenue); }
+.pieza-fdi b { font-size: 1.15rem; color: var(--acento); letter-spacing: 0; }
+.hueco { color: var(--tenue); font-size: .78rem; margin: .2rem 0; }
 
+/* --- modales ------------------------------------------------------------- */
+/*
+ * ⚠️ **El modal NO hace scroll, y esa es su regla.** El alto esta acotado al viewport y el
+ * contenido se reparte en columnas; cuando una lista es de verdad mas larga que la
+ * pantalla —los motivos de revision de un caso real son diecisiete parrafos— el scroll se
+ * queda DENTRO de esa lista y con su cuenta a la vista, en vez de mover el modal entero.
+ * Asi el resto del modal sigue en su sitio mientras se recorre una sola cosa.
+ */
+#modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  padding: 4.6rem 1rem 1rem; background: rgb(0 0 0 / .55); backdrop-filter: blur(3px); }
+#caja-modal {
+  width: min(78rem, 100%); max-height: 100%; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--linea-viva); border-radius: 6px;
+  box-shadow: var(--sombra); overflow: hidden;
+}
+#caja-modal > header { display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--linea);
+  background: var(--panel-alto); flex: none; }
+#titulo-modal { margin: 0; font-size: .82rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--tenue); font-weight: 400; }
+#cierra-modal { background: none; border: 0; color: var(--tenue); cursor: pointer;
+  font: inherit; font-size: 1rem; padding: .1rem .35rem; }
+#cierra-modal:hover { color: var(--texto); }
+/*
+ * ⚠️ **La base del modal es SUYA, y por eso lo de dentro va en `em`.** Todo esto estaba en
+ * `rem` sobre una raiz de 13 px: `.76rem` son 9,9 px reales, que es tamaño de nota al pie
+ * para lo que aqui es el contenido principal —la tabla de assets, los motivos de revision,
+ * las medidas—. En `em` cada cosa escala desde el contenedor que la lleva, asi que la
+ * misma clase sale pequeña en la ficha flotante y legible dentro del modal, sin dos juegos
+ * de reglas.
+ */
+#cuerpo-modal { flex: 1 1 auto; min-height: 0; padding: 1rem; overflow: hidden;
+  font-size: 15px; }
 
-/* --- capas del campo gaussiano ------------------------------------------- */
-.capas { border: 1px solid var(--linea); border-radius: 4px; padding: .6rem .7rem; }
-.capas label { display: block; margin: .35rem 0; cursor: pointer; }
-.capas small { display: block; color: var(--tenue); margin-left: 1.4rem; }
-.capas input[type="range"] { width: 100%; }
-.med { color: var(--acento); font-size: .72rem; text-transform: uppercase;
-  letter-spacing: .06em; }
+/* El reparto en columnas de cada modal. `minmax(0,…)` es lo que permite que una columna
+   se encoja y que el scroll caiga dentro de la lista y no en el modal. */
+.cols { display: grid; gap: 1rem; height: 100%; min-height: 0; }
+.cols-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.cols-3 { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 60rem) { .cols-2, .cols-3 { grid-template-columns: minmax(0, 1fr); } }
+
+.bloque { display: flex; flex-direction: column; min-height: 0; }
+.bloque > h3 { flex: none; margin: 0 0 .5rem; font-size: .8em; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--tenue); font-weight: 400;
+  padding-bottom: .35rem; border-bottom: 1px solid var(--linea); }
+.bloque > h3 .n { color: var(--acento); }
+/* La zona que SI puede desplazarse, cuando su lista es mas larga que la pantalla. */
+.desliza { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: .3rem; }
+.desliza::-webkit-scrollbar { width: 6px; }
+.desliza::-webkit-scrollbar-thumb { background: var(--linea-viva); border-radius: 3px; }
+
+ul { list-style: none; padding: 0; margin: 0; }
+li { padding: .28rem 0; border-bottom: 1px solid var(--linea); }
+dl { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; margin: 0; }
+dt { color: var(--tenue); }
+dd { margin: 0; }
+
+/* --- odontograma --------------------------------------------------------- */
+/*
+ * La rejilla FDI de las dos arcadas, que es como se lee un diente en cualquier software
+ * de clinica: el numero en su sitio anatomico, no en una lista alfabetica. Cada casilla
+ * dice de un vistazo lo que hay de esa pieza —si esta segmentada, si el informe habla de
+ * ella, de que color se midio— y pinchandola se aisla en el modelo.
+ */
+.arcada { margin-bottom: .9rem; }
+.arcada > .rotulo { font-size: .78em; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tenue); margin-bottom: .35rem; }
+.dientes { display: flex; gap: .25rem; justify-content: center; flex-wrap: nowrap; }
+.diente {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center;
+  gap: .2rem; padding: .4rem .1rem; font: inherit; font-size: .88em; cursor: default;
+  color: var(--tenue); background: transparent;
+  border: 1px solid var(--linea); border-radius: 3px;
+}
+/* Una pieza que el modelo NO trae segmentada no se puede aislar, y por eso no se ofrece
+   como pulsable: un boton que no hace nada se lee como que el visor esta roto. */
+.diente[data-hay="si"] { cursor: pointer; color: var(--texto);
+  border-color: var(--linea-viva); background: var(--panel-alto); }
+.diente[data-hay="si"]:hover { border-color: var(--acento); color: var(--acento); }
+.diente[aria-pressed="true"] { border-color: var(--acento); color: var(--acento);
+  background: color-mix(in srgb, var(--acento) 12%, transparent); }
+.diente .fdi { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.diente .tono { width: 100%; height: .3rem; border-radius: 2px; background: var(--linea); }
+.diente .marcas { font-size: .8em; letter-spacing: .04em; min-height: .8em; }
+.diente .marcas .hall { color: var(--aviso); }
 
 /*
- * Las capas del campo van plegadas: es una vista previa cruda del dato —sprites inflados,
- * falso color— y desplegada se comía el panel entero por delante de lo que sí se mira.
- * Se deja a un clic, no escondida: el contenedor trae esos assets y el visor tiene que
- * demostrar que los lee.
+ * ⚠️ **Los assets fluyen en HORIZONTAL, y no es una preferencia.** Iban en una tabla de
+ * una columna dentro de un tercio del modal: diecinueve filas en un hueco donde caben
+ * ocho, asi que once assets quedaban debajo del corte y habia que desplazarse para saber
+ * que lleva el contenedor — que es justo la pregunta que se viene a hacer aqui. En rejilla,
+ * cada asset es una ficha y las diecinueve caben a la vez.
  */
-.capas-caja > summary { cursor: pointer; font-size: .78rem; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--tenue); margin: 1.25rem 0 .4rem; }
-.capas-caja > summary:hover { color: var(--texto); }
+.rejilla-assets { display: grid; gap: .45rem; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+.asset { border: 1px solid var(--linea); border-radius: 4px; padding: .4rem .5rem;
+  display: flex; flex-direction: column; gap: .15rem; min-width: 0;
+  background: color-mix(in srgb, var(--panel-alto) 60%, transparent); }
+.asset .id { font-size: .92em; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.asset .uri { color: var(--acento); font-size: .8em; word-break: break-all;
+  line-height: 1.35; }
+.asset .pie { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  margin-top: .1rem; }
+
+/* Las dos filas del modal del contenedor: los assets arriba, a lo ancho; lo que se
+   consulta despues —registraciones y reparos— repartido debajo. */
+.filas { display: grid; gap: 1rem; height: 100%; min-height: 0;
+  grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr); }
+
+/* --- tablas de datos ----------------------------------------------------- */
+.tabla { width: 100%; border-collapse: collapse; font-size: .87em; }
+.tabla th { text-align: left; font-weight: 400; color: var(--tenue); padding: .2rem .4rem .3rem 0;
+  border-bottom: 1px solid var(--linea); position: sticky; top: 0; background: var(--panel); }
+.tabla td { padding: .22rem .4rem .22rem 0; border-bottom: 1px solid var(--linea);
+  vertical-align: top; }
+.tabla .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.tabla .uri { color: var(--acento); word-break: break-all; font-size: .92em; }
+.k { color: var(--acento); font-size: .85em; }
+.b { color: var(--tenue); font-size: .85em; }
+.prov { color: var(--grave); font-size: .85em; }
+.sinver { color: var(--aviso); font-size: .85em; }
+.l3 { color: var(--aviso); font-size: .85em; letter-spacing: .06em; text-transform: uppercase; }
+
+/* `derived/` — Layer 3. Se distingue del resto a proposito: lo que sale de un modelo no
+   debe leerse igual que lo que alguien midio. */
+.derived { border: 1px solid var(--linea); border-left: 2px solid var(--aviso);
+  padding: .5rem .6rem; }
+.derived .nota { margin: .15rem 0; }
+
+/* Vistas: una rejilla de botones, no una lista. Se busca por el nombre de la vista. */
+.vistas { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: .3rem; }
+.vistas button { font: inherit; font-size: .88em; text-align: left; cursor: pointer;
+  padding: .3rem .45rem; color: var(--texto); background: var(--panel-alto);
+  border: 1px solid var(--linea); border-radius: 3px; }
+.vistas button:hover { color: var(--acento); border-color: var(--acento); }
+
+.medidas li, .gate li { font-size: .9em; line-height: 1.55; }
+.medidas .fuera b { color: var(--grave); }
+.gate li { color: var(--tenue); }
+.reparos .grave { color: var(--grave); }
 
 /*
  * Sacar un asset al disco es un export, y el §8 del spec pide verificar el hash en un
  * export. El boton refleja los tres estados posibles —verificando, guardado, hash malo—
  * porque un fallo de integridad silencioso es peor que no ofrecer la descarga.
  */
-button.guardar { font: inherit; font-size: .68rem; padding: .1rem .4rem; margin-left: .3rem;
+button.guardar { font: inherit; font-size: .8em; padding: .1rem .4rem;
   background: transparent; color: var(--tenue); border: 1px solid var(--linea);
-  border-radius: 3px; cursor: pointer; }
+  border-radius: 3px; cursor: pointer; white-space: nowrap; }
 button.guardar:hover:not(:disabled) { color: var(--acento); border-color: var(--acento); }
 button.guardar:disabled { cursor: progress; }
 button.guardar.malo { color: var(--grave); border-color: var(--grave); }
+
+/* Aviso efimero de las teclas de inspeccion. Sin el, pulsar `o` sobre una vista frontal
+   casi no cambia nada visible y la tecla parece rota. */
+#aviso { position: fixed; left: 50%; z-index: 25;
+  bottom: calc(var(--alto-carta, 7rem) + .9rem); transform: translateX(-50%);
+  background: color-mix(in srgb, var(--fondo) 88%, transparent);
+  border: 1px solid var(--linea); border-radius: 4px; padding: .4rem .8rem;
+  font-size: .8rem; color: var(--texto); pointer-events: none;
+  opacity: 0; transition: opacity .18s ease; }
+#aviso.visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #aviso { transition: none; } }
+
+/* El color medido por pieza. La muestra va PEGADA a su L*a*b* y no sola: la pantalla de
+   quien mira no esta calibrada, asi que el cuadrito orienta y el numero es el dato. */
+.color { margin: .4rem 0 .2rem; }
+.tonos { list-style: none; margin: 0; padding: 0; }
+.tonos li { display: grid; grid-template-columns: 1rem 4.5rem 1fr; align-items: center;
+  gap: .5rem; font-size: .78rem; margin: .15rem 0; border: 0; padding: 0; }
+.muestra { width: 1rem; height: 1rem; border-radius: 2px;
+  border: 1px solid rgb(255 255 255 / .25); }
+.tercio { color: var(--tenue); }
+.lab { font-variant-numeric: tabular-nums; }
