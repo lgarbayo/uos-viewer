@@ -1,156 +1,85 @@
 /**
- * El paso de MALLA del §11.2: geometría opaca, material clínico neutro, escribe depth.
+ * La CAMARA de la escena: proyeccion, orbita y encuadre. Nada mas.
  *
- * Es el primero de los cuatro pasos que el spec describe, y a propósito el único que hay
- * hoy. Los otros tres —volumen por raycast, splats, overlays MPR— dependen de él: el paso
- * de volumen tiene que leer *su* depth buffer para terminar los rayos en las superficies,
- * así que sin malla no hay contra qué componer.
+ * ⚠️ **Aqui ya no hay malla, y es una decision del formato, no una simplificacion.** El
+ * spec describe cuatro pasos que empiezan por geometria opaca, y este visor los hacia asi:
+ * `scene.glb` primero, gaussianas encima. Pero el contenedor de este proyecto lleva
+ * **solo el campo gaussiano y el manifiesto** — el escaneo original y la malla convertida
+ * viajan fuera, como assets externos nombrados por su sha256. Ensenar una malla que el
+ * `.uos` no lleva era ensenar otra cosa distinta del modelo.
  *
- * ⚠️ **Material neutro, no bonito.** Un material con color propio o con reflejos fuertes
- * inventa relieve donde no lo hay: en una malla de escáner intraoral, un especular mal
- * puesto se lee como una fisura. Gris mate, luz difusa y el color de verdad —cuando lo
- * haya— llegará por la capa de apariencia.
+ * La consecuencia esta asumida: un `.uos` que traiga `scene.glb` se abre igual, pero se ve
+ * lo que traiga en gaussianas y no su malla.
  *
- * ⚠️ **Y no hay color medido en ninguna parte, así que no se finge.** Hubo tres modos de
- * color —marfil, falso color por pieza y sin pintar— y quedó uno. El peligroso era el
- * creíble: un falso color chillón se lee como lo que es, pero un rosa de encía se lee como
- * si el escáner lo hubiera medido, y salía de `derived/`, que es inferencia (Layer 3). Un
- * escáner intraoral sí puede medir color —el caso Bite2Text del otro visor lo hace,
- * muestreando las fotos intraorales— pero un STL no lo lleva, y este contenedor viene de
- * un STL. Mientras eso siga así, un tono para toda la malla.
+ * ⚠️ **Y la seleccion de piezas se mudo con ella.** Vivia aqui como un raycast contra los
+ * triangulos; ahora vive en `Splats` como un pase de seleccion sobre las propias
+ * gaussianas, contra la columna `region_id`. Ver `Splats.piezaEn`.
  */
 
 import {
-  AmbientLight,
   Box3,
-  BufferGeometry,
-  BufferAttribute,
-  DirectionalLight,
-  HemisphereLight,
-  Mesh,
-  DoubleSide,
-  MeshStandardMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
   Scene,
   Vector3,
-  Raycaster,
-  Vector2,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-
-/**
- * Marfil: hueso cálido, no blanco. Un diente blanco puro sólo existe blanqueado.
- *
- * ⚠️ **Y la encía va del mismo color a propósito.** Había un coral para la encía, y
- * pintar dos colores es afirmar que se sabe dónde acaba uno y empieza el otro. Hoy no se
- * sabe: medido sobre un caso real, 11 de las 14 piezas se pasan de su caja anatómica
- * porque la corona se come el margen gingival, así que el rosa no dibujaba la encía —
- * dibujaba el error de la segmentación, y al revés (la encía comida salía color diente).
- * Ver `docs/research/segmentacion-fdi-escaner.md` del monorepo.
- *
- * Un solo tono no afirma ninguna frontera. Cuando la frontera esté medida —del color de
- * la fotografía clínica, no de la geometría— volverá el segundo color, y entonces
- * significará algo. Hasta entonces la malla se pinta de UN color y las etiquetas sólo se
- * usan para lo que sí sostienen: encender la pieza que se ha seleccionado.
- */
-const COLOR_MARFIL: [number, number, number] = [0.925, 0.894, 0.824];
-/**
- * Cuánto se apaga lo que no es la pieza resaltada.
- *
- * ⚠️ Estaba en 0,34 y era demasiado: la arcada entera se iba a un gris plano y dejaba de
- * leerse como anatomía, hasta el punto de parecer un fallo de iluminación. Lo que hace
- * falta es que la pieza destaque, no que el resto desaparezca — el clínico mira una pieza
- * EN una boca, y el contexto es la mitad de la información.
- */
-const APAGADO = 0.62;
 
 /** El del spec (§7) y el de la distancia que declaran las vistas. */
 export const FOV_GRADOS = 35;
 
 export class Escena {
   readonly scene = new Scene();
-  readonly camera: PerspectiveCamera;
-  private readonly renderer: WebGLRenderer;
-  private readonly controles: OrbitControls;
-  private readonly rayo = new Raycaster();
-  private malla: Mesh | null = null;
-  private etiquetas: Int16Array | null = null;
-  private resaltada: number | null = null;
+  readonly renderer: WebGLRenderer;
+  private readonly perspectiva: PerspectiveCamera;
+  /**
+   * La misma vista sin fuga de perspectiva.
+   *
+   * ⚠️ **No es cosmética: en perspectiva, dos dientes del mismo tamaño se dibujan
+   * distintos según lo lejos que estén**, y comparar tamaños a ojo sobre una arcada es
+   * justo lo que un clínico hace. El rasterizador de splats la soporta —lee
+   * `camera.isOrthographicCamera` de la cámara que le pasamos cada fotograma— así que
+   * cambiarla aquí basta para que los splats se proyecten bien.
+   */
+  private readonly ortografica: OrthographicCamera;
+  private activa: PerspectiveCamera | OrthographicCamera;
+  private controles: OrbitControls;
+  /** Medio alto del frustum ortográfico, en mm. Lo fija `encuadraCaja`. */
+  private medioAlto = 50;
+
+  /** La cámara que se está usando. Cambia con `ponOrtografica`. */
+  get camera(): PerspectiveCamera | OrthographicCamera {
+    return this.activa;
+  }
+
+  get esOrtografica(): boolean {
+    return this.activa === this.ortografica;
+  }
 
   constructor(private readonly lienzo: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas: lienzo, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.camera = new PerspectiveCamera(FOV_GRADOS, 1, 0.1, 5000);
-    // ⚠️ **Las luces van pegadas a la CÁMARA, no al mundo.** Antes había dos
-    // direccionales en `(1,1,1)` y `(-1,-1,-1)`, que son opuestas y por tanto **el mismo
-    // eje**: todo lo que tuviera la normal perpendicular a él —o sea un anillo entero de
-    // orientaciones— no recibía luz de ninguna y se quedaba con el ambiente a secas. En
-    // una arcada eso es casi todo: los incisivos centrales miraban por casualidad hacia
-    // ese eje y salían blancos, y los premolares y molares salían gris oscuro. Se leía
-    // como que el color no distinguía diente de encía, y lo que no había era luz.
-    //
-    // Con la luz solidaria a la cámara, lo que miras está iluminado se mire desde donde
-    // se mire. Y con `DoubleSide` vale también para la cara interior de la bóveda, porque
-    // three invierte la normal al sombrear una cara trasera.
-    this.scene.add(new AmbientLight(0xffffff, 0.55));
-    // Cielo/suelo: da una caída suave que un ambiente plano no da, y evita que las caras
-    // que miran hacia abajo queden del mismo tono exacto que las que miran hacia arriba.
-    this.scene.add(new HemisphereLight(0xdfe7f2, 0x4a4038, 0.75));
-    // Principal ligeramente descentrada: puesta justo en el eje de la cámara aplanaría el
-    // relieve, que en una superficie oclusal es justo lo que hay que ver.
-    const principal = new DirectionalLight(0xffffff, 1.05);
-    principal.position.set(-0.45, 0.7, 1);
-    this.camera.add(principal);
-    const relleno = new DirectionalLight(0xffffff, 0.35);
-    relleno.position.set(0.8, -0.4, 0.6);
-    this.camera.add(relleno);
-    // La cámara tiene que estar EN la escena o sus hijas no se recorren al renderizar.
-    this.scene.add(this.camera);
+    this.perspectiva = new PerspectiveCamera(FOV_GRADOS, 1, 0.1, 5000);
+    this.ortografica = new OrthographicCamera(-1, 1, 1, -1, 0.1, 5000);
+    this.activa = this.perspectiva;
+    // ⚠️ **Aqui ya no hay luces, y no es un descuido.** Habia tres —ambiente, hemisferio
+    // y dos direccionales pegadas a la camara— y existian para la malla, que se sombreaba
+    // con un `MeshStandardMaterial`. Sin malla no queda nada que iluminar: los splats
+    // llevan su propio color y su propia opacidad, y un `ShaderMaterial` no lee luces.
+    // Dejarlas seria pagar su coste cada fotograma para no cambiar un pixel.
 
     // ⚠️ La orbita gira alrededor de `camera.up`, y ese vector lo pone cada VISTA: las del
     // `.uos` traen el eje superior medido de las etiquetas FDI. Sin esto se orbitaria
     // alrededor del eje del mundo, y en una arcada cuyo eje oclusal no coincida con el, la
     // camara no da la vuelta: la vuelca.
-    this.controles = new OrbitControls(this.camera, lienzo);
-    this.controles.enableDamping = true;
-    this.controles.dampingFactor = 0.08;
+    this.controles = this.creaControles();
     // Sin esto el zoom depende de a que distancia estuviera la camara, y en una arcada de
     // 90 mm mirada desde 95 cada rueda salta demasiado.
-    this.controles.zoomToCursor = true;
-    this.controles.panSpeed = 0.8;
 
     this.redimensiona();
     addEventListener('resize', () => this.redimensiona());
-  }
-
-  /** Pone la malla en escena. Sustituye a la anterior: un caso, una geometría. */
-  ponMalla(geometria: BufferGeometry): void {
-    if (this.malla) {
-      this.scene.remove(this.malla);
-      this.malla.geometry.dispose();
-    }
-    // Sólo si no vienen: el glTF las trae y recalcularlas las sustituiría por las de
-    // caras, que en una malla de escáner suaviza detalle real.
-    if (!geometria.getAttribute('normal')) geometria.computeVertexNormals();
-    this.etiquetas = null;
-    // ⚠️ `DoubleSide`, y no es cosmética. Una malla de escáner intraoral es una CÁSCARA
-    // abierta, no un sólido cerrado: mirando un maxilar desde oclusal se ve la cara
-    // interior de la bóveda palatina, y con el `FrontSide` que trae `three` por defecto
-    // esas caras se descartan. El resultado es un agujero negro justo en el centro de la
-    // arcada, que parece «el paladar no está en el fichero» cuando sí está — medido, 7.585
-    // vértices. Un fallo de render que se lee como un fallo de dato es de los caros.
-    this.malla = new Mesh(
-      geometria,
-      new MeshStandardMaterial({
-        color: 0xd8d4cc,
-        roughness: 0.85,
-        metalness: 0.0,
-        side: DoubleSide,
-      }),
-    );
-    this.scene.add(this.malla);
   }
 
   /**
@@ -167,9 +96,12 @@ export class Escena {
     this.camera.position.set(v.position[0]!, v.position[1]!, v.position[2]!);
     this.camera.up.set(v.up[0]!, v.up[1]!, v.up[2]!);
     this.camera.lookAt(new Vector3(v.target[0]!, v.target[1]!, v.target[2]!));
+    // El `fov` de una vista guardada es de la cámara en perspectiva; en ortográfica no
+    // existe, pero se guarda para que volver a perspectiva lo recupere.
     if (v.fov) {
-      this.camera.fov = v.fov;
-      this.camera.updateProjectionMatrix();
+      this.perspectiva.fov = v.fov;
+      this.perspectiva.updateProjectionMatrix();
+      this.redimensiona();
     }
     // El pivote de la orbita pasa a ser lo que la vista mira. Si no, seguir orbitando
     // despues de saltar a una pieza giraria alrededor del centro de la arcada y la pieza
@@ -178,99 +110,25 @@ export class Escena {
     this.controles.update();
   }
 
-  /** Encuadre de emergencia cuando el contenedor no trae vistas. */
-  encuadraTodo(): void {
-    if (!this.malla) return;
-    const caja = new Box3().setFromObject(this.malla);
+  /**
+   * Encuadra la cámara sobre una caja cualquiera.
+   *
+   * Es el unico encuadre que hay: lo que se encuadra es la nube de gaussianas, porque
+   * es lo unico que el contenedor lleva.
+   */
+  encuadraCaja(caja: Box3): void {
     const centro = caja.getCenter(new Vector3());
     const radio = caja.getSize(new Vector3()).length() / 2;
-    const d = radio / Math.tan((this.camera.fov / 2) * (Math.PI / 180));
+    // La distancia se calcula SIEMPRE con el fov de la perspectiva: en ortográfica la
+    // cámara no se acerca ni se aleja —el encuadre lo da el frustum— pero conviene dejarla
+    // a la misma distancia para que alternar entre las dos no dé un salto.
+    const d = radio / Math.tan((this.perspectiva.fov / 2) * (Math.PI / 180));
+    this.medioAlto = radio * 1.15;
     this.camera.position.copy(centro).add(new Vector3(0, 0, d * 1.2));
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(centro);
     this.controles.target.copy(centro);
     this.controles.update();
-  }
-
-  /**
-   * Cuelga la segmentación de `derived/` sobre la escena, por índice de vértice.
-   *
-   * ⚠️ **Apagada por defecto** (§5.5). Se guarda el array pero no se pinta hasta que
-   * alguien lo pida: una segmentación encima de la anatomía sin decir que es inferencia se
-   * lee como si fuera medida.
-   */
-  ponEtiquetas(etiquetas: Int16Array): void {
-    if (!this.malla) return;
-    const n = this.malla.geometry.getAttribute('position').count;
-    if (etiquetas.length !== n) {
-      throw new Error(
-        `La segmentación trae ${etiquetas.length} códigos y la escena ${n} vértices: ` +
-          'no se pueden cruzar por índice.',
-      );
-    }
-    this.etiquetas = etiquetas;
-    this.repinta();
-  }
-
-  /**
-   * Enciende una pieza y apaga el resto. `null` las devuelve todas.
-   *
-   * ⚠️ Apagar en vez de rodear con un borde es una decisión, no una preferencia estética:
-   * el contorno de un diente sobre una malla de escáner cae en el margen gingival, que es
-   * justo la frontera clínica que interesa mirar. Un borde dibujado encima la tapa; bajar
-   * el brillo de lo demás la deja intacta.
-   */
-  resalta(fdi: number | null): void {
-    this.resaltada = fdi;
-    this.repinta();
-  }
-
-  private repinta(): void {
-    if (!this.malla) return;
-    const material = this.malla.material as MeshStandardMaterial;
-    const etq = this.etiquetas;
-    // Sin `derived/` no hay etiquetas, y entonces la malla se queda con el gris del
-    // material. No es un modo degradado: un `.uos` sin capa de inferencia es legal y
-    // frecuente, y lo correcto ahí es no pintar nada por vértice.
-    if (!etq) {
-      material.vertexColors = false;
-      material.needsUpdate = true;
-      return;
-    }
-    const n = this.malla.geometry.getAttribute('position').count;
-    const color = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const fdi = etq[i]!;
-      let c: [number, number, number] = COLOR_MARFIL;
-      if (this.resaltada !== null && fdi !== this.resaltada) {
-        c = [c[0] * APAGADO, c[1] * APAGADO, c[2] * APAGADO];
-      }
-      color[i * 3] = c[0];
-      color[i * 3 + 1] = c[1];
-      color[i * 3 + 2] = c[2];
-    }
-    this.malla.geometry.setAttribute('color', new BufferAttribute(color, 3));
-    material.vertexColors = true;
-    material.needsUpdate = true;
-  }
-
-  /**
-   * Qué pieza hay bajo el cursor, o `null`. Raycast contra la malla, que es lo que el
-   * §11.3 pide: el picking se resuelve sobre la GEOMETRÍA, no sobre una lista de
-   * centroides proyectados.
-   */
-  pieza(x: number, y: number): number | null {
-    if (!this.malla || !this.etiquetas) return null;
-    const rect = this.lienzo.getBoundingClientRect();
-    this.rayo.setFromCamera(
-      new Vector2(((x - rect.left) / rect.width) * 2 - 1,
-                  -((y - rect.top) / rect.height) * 2 + 1),
-      this.camera,
-    );
-    const golpe = this.rayo.intersectObject(this.malla, false)[0];
-    if (!golpe || golpe.face === undefined || golpe.face === null) return null;
-    const fdi = this.etiquetas[golpe.face.a];
-    return fdi !== undefined && fdi > 0 ? fdi : null;
   }
 
   dibuja(): void {
@@ -281,7 +139,46 @@ export class Escena {
   private redimensiona(): void {
     const { clientWidth: w, clientHeight: h } = this.lienzo;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / Math.max(h, 1);
-    this.camera.updateProjectionMatrix();
+    const aspecto = w / Math.max(h, 1);
+    this.perspectiva.aspect = aspecto;
+    this.perspectiva.updateProjectionMatrix();
+    // El frustum ortográfico se deriva del encuadre: `medioAlto` lo fija `encuadraCaja`,
+    // que es lo único que sabe de qué tamaño es lo que hay delante.
+    this.ortografica.top = this.medioAlto;
+    this.ortografica.bottom = -this.medioAlto;
+    this.ortografica.left = -this.medioAlto * aspecto;
+    this.ortografica.right = this.medioAlto * aspecto;
+    this.ortografica.updateProjectionMatrix();
+  }
+
+  /** Los controles se atan a UNA cámara: cambiarla obliga a rehacerlos, conservando el pivote. */
+  private creaControles(): OrbitControls {
+    const c = new OrbitControls(this.activa, this.lienzo);
+    c.enableDamping = true;
+    c.dampingFactor = 0.08;
+    c.zoomToCursor = true;
+    c.panSpeed = 0.8;
+    return c;
+  }
+
+  /**
+   * Cambia entre perspectiva y ortográfica conservando de dónde se mira y hacia dónde.
+   *
+   * ⚠️ El rasterizador de splats lee `isOrthographicCamera` de la cámara que le llega en
+   * cada `onBeforeRender`, así que no hay que avisarle: cambiar la cámara aquí basta.
+   */
+  ponOrtografica(si: boolean): void {
+    const destino = si ? this.ortografica : this.perspectiva;
+    if (destino === this.activa) return;
+    destino.position.copy(this.activa.position);
+    destino.quaternion.copy(this.activa.quaternion);
+    destino.up.copy(this.activa.up);
+    const pivote = this.controles.target.clone();
+    this.activa = destino;
+    this.controles.dispose();
+    this.controles = this.creaControles();
+    this.controles.target.copy(pivote);
+    this.redimensiona();
+    this.controles.update();
   }
 }

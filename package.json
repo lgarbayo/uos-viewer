@@ -30,6 +30,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mkkellogg/gaussian-splats-3d": "^0.4.7",
     "three": "^0.185.0"
   },
   "devDependencies": {
