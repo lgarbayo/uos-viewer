@@ -52,16 +52,59 @@ demás está por hacer y aquí queda escrito cuál es cuál, para que nadie lo d
 | Vistas guardadas (§7): aplicar una a la cámara | **sí** |
 | Assets-directorio (serie DICOM): un corte suelto por rango | **sí** |
 | Sidecar del volumen (§5.2), sin parser DICOM en el cliente | **se lee** |
-| **1. Mesh pass** — geometría opaca, material clínico neutro | **sí** (glTF y STL) |
+| **1. Mesh pass** — geometría opaca, material clínico neutro | **no**, y a propósito (ver abajo) |
 | **2. Volume pass** — raycast contra `Texture3D`, presets CBCT, depth-aware | no |
-| **3. GS pass** — splats por capa, encendibles | **sí**, aditivo (ver abajo) |
+| **3. GS pass** — splats por capa, encendibles | **sí** · densidad aditiva + apariencia rasterizada (ver abajo) |
 | **4. Overlays** — MPR, clip planes, mediciones, anotaciones | no |
-| Picking semántico → código FDI por vértice, con resaltado de la pieza | **sí** |
+| Picking semántico → código FDI, con resaltado de la pieza | **sí**, por gaussiana (`region_id`) |
 | MPR sincronizado · timeline dual · deep-links | no |
 | `SignalLoader` · `DerivedLoader` | no |
 | `raw.zst` del volumen (`fzstd`) | no |
 
-### El paso de GS es ADITIVO, y no es un atajo
+### No hay paso de malla, y es una decisión del formato
+
+El §11.2 empieza por geometría opaca y este visor lo hacía: `scene.glb` primero, gaussianas
+encima. Se quitó porque **el contenedor de este proyecto lleva sólo el campo gaussiano y el
+manifiesto** — el escaneo original y la malla convertida viajan fuera, declarados por su
+`sha256`. Dibujar una malla que el `.uos` no lleva era enseñar algo distinto del modelo.
+
+Con ella se fue el picking por raycast, que estaba definido sobre los vértices de un
+`scene.glb`. En su sitio hay un **pase de selección sobre las propias gaussianas**: se
+redibuja el píxel bajo el cursor con el código FDI como color y con profundidad encendida,
+así que gana la gaussiana más cercana a la cámara. El código sale de la columna `region_id`
+de la capa de apariencia, y el sidecar declara lo que es — `measured: false`, vocabulario
+ISO-3950, «vecino más cercano» — para que unas etiquetas de inferencia no se lean como
+medidas. Ver `Splats.piezaEn`.
+
+**La consecuencia, dicha:** un `.uos` antiguo que traiga `scene.glb` se abre igual, pero se
+ve lo que traiga en gaussianas y no su malla.
+
+### Dos rasterizadores, porque son dos físicas
+
+El §11.2 pide un solo GS pass. Aquí hay dos caminos, y la razón es el dato:
+
+- **Campo de densidad** (`ash-twin/1.0`) → sprites aditivos propios, en `Splats.ts`.
+  Composición por suma, sin ordenar. El porqué está abajo.
+- **Apariencia** (`ash-gs-apariencia/1.0`) → **`@mkkellogg/gaussian-splats-3d`**, que es lo
+  que el spec nombra en §11.2 paso 3, en `Apariencia.ts`.
+
+**Por qué la apariencia necesita el rasterizador de verdad, medido.** Es 3DGS: mezcla
+alfa, que **no** es conmutativa. Y el entrenamiento reparte la imagen entre unas pocas
+gaussianas opacas y decenas de miles de «neblina» — mediana de alfa **5/255**, con sólo el
+17,9 % por encima de 32/255. Dibujando sprites sin ordenar, esa neblina multiplica por
+`(1−α)` lo que tiene delante *y* lo que tiene detrás: la superficie se borra a sí misma y
+queda polvo. Además un splat es una **elipse** —la proyección de la covarianza 3D— y el
+sprite era un círculo de radio `scale_0`, con una anisotropía mediana de 2,5× y de 48,6× en
+el percentil 95.
+
+Se monta como `DropInViewer`, un `THREE.Group` colgado de nuestra escena, para que la
+cámara siga siendo de `Escena`: las vistas guardadas del §7 traen su `up` medido.
+
+**Y `Splats` conserva la geometría de la apariencia, invisible**, para dos cosas que el
+rasterizador no da: la caja de encuadre y el pase de selección contra `region_id`. El
+rasterizador reordena las gaussianas por dentro, así que un índice suyo no es el nuestro.
+
+### El paso de densidad es ADITIVO, y no es un atajo
 
 El 3DGS de facto pinta apariencia —color con armónicos esféricos, opacidad aprendida— y su
 mezcla alfa **exige ordenar cada gaussiana por profundidad en cada fotograma**. Lo que este
@@ -85,21 +128,23 @@ Un `.ply` cuyo sidecar declare otro perfil **no se pinta**: sus columnas se llam
 no significan lo mismo, así que dibujarlo daría una imagen plausible y falsa. Se salta
 diciéndolo.
 
-**Y la limitación grande, medida: esto no es un render volumétrico.** El `cbct-agent`
-fija la σ de cada gaussiana en medio vóxel —0,075 mm, el **mismo valor en 1.341.421
-primitivas**— y el espaciado real entre vecinas en el campo exportado es 0,212 mm. Con
-σ/espaciado = 0,35 el campo reconstruido cae prácticamente a cero entre primitiva y
-primitiva: sondeado dentro del hueso más denso, va de 0,795 en el centro de una gaussiana
-a ~0 a medio camino de la siguiente. **No es un continuo, son 1,34 millones de puntos
-aislados**, y ninguna ganancia lo arregla.
+**Y la limitación grande, medida: el campo llega DIEZMADO y por eso se ve como puntos.**
+El `cbct-agent` siembra σ = medio vóxel en cada eje —(0,075, 0,075, 0,225) mm sobre un vóxel
+de 0,15 × 0,15 × 0,45—, que es correcto. Pero el volumen trae ~12 M de vóxeles de tejido
+duro contra un tope de 1,5 M, así que submuestrea con `occupied[::9]` **sobre un array en
+orden raster**: se come ocho de cada nueve a lo largo de un solo eje. Medida la separación
+entre gaussianas consecutivas dentro de una fila, **1,35 mm en el 73 % de los casos**, con
+σ = 0,075 en ese eje — o sea **σ/separación = 0,056**. Sondeado dentro del hueso más denso,
+el campo va de 1,21 en el centro de una gaussiana a 0,016 entre ellas: **rizado del 99 %**.
 
-Lo que hace este visor es dibujar cada sprite inflado hasta el espaciado medido de la nube
-—calculado al cargarla con una rejilla espacial, validado contra un KD-tree con 0,0 % de
-error—. Es un **apaño declarado**. Y el dato no está mal: media σ por vóxel es lo correcto
-para una *semilla*, y aquí no hay optimizador a propósito, porque en cuanto uno mueve las
-primitivas para que la imagen cuadre dejan de ser medidas. Lo que falta es integrar a lo
-largo del rayo con una función de transferencia —la misma pieza que falta para poder
-rellenar `value_range`—, no primitivas más gordas.
+No es una nube: son planos densos separados 1,35 mm. Y **no es el precio de que el dato sea
+medido** — es que el submuestreo es anisótropo por construcción y σ no se reescala con él.
+Se arregla diezmando en el espacio en vez de en el raster y escalando σ con el factor.
+
+Lo que hace este visor mientras tanto es dibujar cada sprite inflado hasta el espaciado
+medido de la nube —calculado con una rejilla espacial, validado contra un KD-tree con 0,0 %
+de error—. Es un apaño, y encima corto: ese espaciado (0,212 mm) es la distancia al vecino
+de OTRA fila, no el hueco real de 1,35 mm.
 
 **La limitación que el spec ya reconoce y aquí también:** componer GS translúcido con
 volumen translúcido no tiene solución exacta con dos pasadas independientes. Cuando llegue
