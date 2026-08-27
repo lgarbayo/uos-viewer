@@ -45,6 +45,20 @@ export interface Asset {
   readonly parts?: readonly ParteAsset[];
   /** Descriptor que evita parsear el asset para saber qué es. El volumen lo usa (§5.2). */
   readonly sidecar_uri?: string | null;
+  /**
+   * El asset **no viaja dentro**: el contenedor declara su `sha256` y su tamaño y nada más.
+   *
+   * ⚠️ **Y entonces la `uri` no es una ruta, es una direccion de contenido** —
+   * `sha256:<hex>`, el mismo hash que declara `sha256`. Un fichero que no viaja no tiene
+   * sitio dentro del ZIP, y una ruta local sería peor que inútil: llevaría el directorio
+   * del paciente fuera del contenedor, que es justo lo que el seudónimo existe para evitar.
+   *
+   * Cambia la GARANTÍA, no sólo el peso: con el original dentro, el `.uos` afirma «lo que
+   * sale es lo que entró» y se puede comprobar aquí mismo; sin él afirma «sé el hash de lo
+   * que debería haber ahí». Por eso el visor lo dice en voz alta en vez de fallar como si
+   * el fichero se hubiera perdido.
+   */
+  readonly external?: boolean;
 }
 
 export interface Frame {

@@ -56,6 +56,14 @@ export class UosLoader {
     }
 
     for (const a of manifiesto.assets) {
+      // ⚠️ **Un asset `external` no es un reparo.** El perfil ligero declara el original
+      // por su dirección de contenido y deja su custodia a otro sistema: que no esté
+      // dentro es lo que el contenedor AFIRMA, no lo que incumple. Antes se listaban los
+      // once como fallos graves —el STL, las nueve fotos y los informes—, en rojo y
+      // encima de la escena, mientras la ficha del propio asset ya decía `FUERA · SÓLO SU
+      // HASH` tres centímetros más abajo. Un reparo es «esto se contradice»; esto es
+      // «esto no viaja, y lo dije».
+      if (a.external) continue;
       const hay = a.uri.endsWith('/')
         ? zip.entradas.some((e) => e.nombre.startsWith(a.uri))
         : zip.entrada(a.uri) !== undefined;
@@ -99,6 +107,16 @@ export class UosLoader {
 
   /** Los bytes de un asset, bajados en ese momento y cacheados. */
   async bytes(asset: Asset): Promise<Uint8Array> {
+    // ⚠️ Un asset EXTERNO no está aquí, y hay que decirlo con esas palabras. Sin esto el
+    // lector bajaba a buscar `sha256:33a8f5…` como si fuera un nombre de entrada del ZIP y
+    // el error resultante era «el contenedor no lleva `sha256:33a8f5…`», que suena a
+    // fichero corrupto cuando lo que pasa es que el perfil ligero no lo lleva a propósito.
+    if (asset.external) {
+      throw new Error(
+        `\`${asset.id}\` no viaja dentro de este contenedor: se declara por su contenido ` +
+          `(${asset.uri}). El \`.uos\` afirma su sha256 y su tamaño, no sus bytes.`,
+      );
+    }
     if (asset.uri.endsWith('/')) {
       throw new Error(
         `\`${asset.id}\` es un directorio (${asset.parts?.length ?? '?'} ficheros): se ` +

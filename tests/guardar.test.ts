@@ -15,21 +15,35 @@ const CORE = process.env.UOS_CORE ?? '';
  * sale no es lo que entró, no hay ningún sitio posterior donde se note.
  */
 describe.skipIf(!CORE)('sacar un asset del contenedor', () => {
-  it('el escaneo sale byte a byte lo que declara el manifiesto', async () => {
+  it('un asset que SÍ viaja sale byte a byte lo que declara el manifiesto', async () => {
     const uos = await UosLoader.abrir(new NodeFileReader(CORE));
-    const stl = uos.porPrioridad.find((a) => a.uri.endsWith('.stl'));
-    expect(stl, 'el contenedor no trae el escaneo como STL').toBeTruthy();
+    const dentro = uos.porPrioridad.find(
+      (a) => !a.external && !a.uri.endsWith('/') && a.bytes > 0,
+    );
+    expect(dentro, 'el contenedor no trae ningún asset dentro').toBeTruthy();
 
-    const bytes = await uos.bytes(stl!);
-    expect(bytes.length).toBe(stl!.bytes);
-    expect(await uos.verifica(stl!)).toBe(true);
+    const bytes = await uos.bytes(dentro!);
+    expect(bytes.length).toBe(dentro!.bytes);
+    expect(await uos.verifica(dentro!)).toBe(true);
+  });
 
-    // Y que es un STL binario de verdad, no un fichero del tamaño correcto: la cabecera
-    // son 80 bytes y luego un uint32 con el número de triángulos, que tiene que cuadrar
-    // con el tamaño real (50 bytes por triángulo).
-    const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const triangulos = v.getUint32(80, true);
-    expect(84 + triangulos * 50).toBe(bytes.length);
+  /**
+   * ⚠️ **El perfil de solo gaussianas.** El escaneo original y las fotos NO viajan: el
+   * contenedor lleva el campo gaussiano y el manifiesto, y de lo demás declara el hash.
+   *
+   * El lector bajaba a buscar `sha256:33a8f5…` como si fuera una entrada del ZIP, y el
+   * error decía «el contenedor no lleva `sha256:33a8f5…`» — que suena a fichero corrupto
+   * cuando lo que pasa es que el perfil no lo lleva A PROPÓSITO. La diferencia importa:
+   * una es un `.uos` roto y la otra es un `.uos` haciendo lo que promete.
+   */
+  it('un asset EXTERNO se niega a salir, y dice que no está en vez de fallar', async () => {
+    const uos = await UosLoader.abrir(new NodeFileReader(CORE));
+    const fuera = uos.porPrioridad.find((a) => a.external);
+    if (!fuera) return; // un contenedor completo no tiene ninguno
+    // La `uri` es la dirección de contenido, y es su propio sha256: un fichero que no
+    // viaja no tiene ruta, y una ruta local sacaría el directorio del paciente del `.uos`.
+    expect(fuera.uri).toBe(`sha256:${fuera.sha256}`);
+    await expect(uos.bytes(fuera)).rejects.toThrow(/no viaja dentro/);
   });
 
   it('un asset-directorio se niega a salir de golpe, y dice por qué', async () => {

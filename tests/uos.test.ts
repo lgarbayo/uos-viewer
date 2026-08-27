@@ -31,18 +31,44 @@ describe.runIf(hay(CORE))('un .uos de nivel UOS-Core', () => {
     expect(zip.entradas.filter((e) => e.comprimido)).toEqual([]);
   });
 
-  it('abre sin reparos y declara su marco canónico en milímetros', async () => {
+  it('abre y declara su marco canónico en milímetros', async () => {
     const uos = await abrir();
-    expect(uos.reparos).toEqual([]);
+    // ⚠️ **Un asset `external` NO puede aparecer como reparo.** El perfil de solo
+    // gaussianas deja fuera el escaneo, las fotos y los informes, y el loader reparaba por
+    // cada uno: once líneas rojas encima de la escena por hacer exactamente lo que el
+    // perfil promete. Un reparo es «esto se contradice»; que un original no viaje es lo
+    // que el contenedor AFIRMA, y la ficha del asset ya lo dice con `FUERA · SÓLO SU HASH`.
+    //
+    // La versión anterior de este test exigía justo lo contrario —que TODO reparo hablara
+    // de un asset externo— porque daba por buena esa lista. Confundir «lo explico» con «no
+    // es un fallo» es como un aviso legítimo se pierde entre once que no lo son.
+    const externos = new Set(uos.porPrioridad.filter((a) => a.external).map((a) => a.id));
+    for (const r of uos.reparos) {
+      expect([...externos].some((id) => r.texto.includes(id)), r.texto).toBe(false);
+    }
+    expect(uos.reparos.filter((r) => r.grave)).toEqual([]);
     expect(uos.manifiesto.canonical_frame.units).toBe('mm');
     expect(uos.manifiesto.phi_state).toBe('pseudonymized');
   });
 
-  it('ordena los assets por prioridad de carga: la escena antes que las fotos', async () => {
+  it('ordena los assets por prioridad de carga, y lo primero que se dibuja va primero', async () => {
     const uos = await abrir();
     const prios = uos.porPrioridad.map((a) => a.load_priority);
     expect(prios).toEqual([...prios].sort((a, b) => a - b));
-    expect(uos.porPrioridad[0]?.kind).toBe('mesh_gs_scene');
+    // ⚠️ **Esto decía «la escena antes que las fotos» y ya no puede decirlo.** El orden del
+    // §4.1 es malla 10 → fotos 20 → GS 25 → volumen 30, y da por hecho que lo primero que
+    // se enseña es una malla. En el perfil de solo gaussianas no hay malla: el campo es la
+    // escena y carga en la 25, detrás de unas fotos que además son externas y no se bajan.
+    //
+    // Lo que sí se puede exigir —y es lo que el visor necesita— es que de lo que VIAJA y
+    // se dibuja, el campo gaussiano sea lo primero.
+    const dibujables = uos.porPrioridad.filter((a) => !a.external && a.bytes > 0);
+    expect(dibujables[0]?.kind).toBeDefined();
+    const primeraEscena = dibujables.findIndex((a) => a.kind === 'mesh_gs_scene');
+    expect(primeraEscena, 'no viaja ninguna escena que dibujar').toBeGreaterThanOrEqual(0);
+    for (const a of dibujables.slice(primeraEscena)) {
+      expect(a.kind, 'algo que se dibuja carga DESPUÉS de la escena').not.toBe('image2d');
+    }
   });
 
   it('baja un asset suelto SIN traerse el contenedor entero', async () => {
@@ -57,9 +83,13 @@ describe.runIf(hay(CORE))('un .uos de nivel UOS-Core', () => {
       },
     };
     const uos = await UosLoader.abrir(espia);
-    const foto = uos.de('image2d')[0];
-    expect(foto).toBeDefined();
-    await uos.bytes(foto!);
+    // Uno que SÍ viaje: en el perfil de solo gaussianas las fotos son externas y pedirlas
+    // no baja un byte — con lo que la prueba pasaría sin probar nada.
+    const suelto = uos.porPrioridad.find(
+      (a) => !a.external && !a.uri.endsWith('/') && a.bytes > 0,
+    );
+    expect(suelto).toBeDefined();
+    await uos.bytes(suelto!);
 
     const total = await base.size();
     // Índice + manifiesto + una foto. Muy lejos del contenedor entero.
@@ -68,8 +98,8 @@ describe.runIf(hay(CORE))('un .uos de nivel UOS-Core', () => {
 
   it('el sha256 que declara el manifiesto es el del fichero', async () => {
     const uos = await abrir();
-    const malla = uos.de('mesh_gs_scene')[0]!;
-    await expect(uos.verifica(malla)).resolves.toBe(true);
+    const escena = uos.de('mesh_gs_scene').find((a) => !a.external)!;
+    await expect(uos.verifica(escena)).resolves.toBe(true);
   });
 
   it('trae las vistas guardadas y todas apuntan a una visita declarada', async () => {
