@@ -23,6 +23,39 @@ export interface Pieza {
   readonly confidence?: number;
   readonly agent?: string;
   readonly observed?: string;
+  readonly color?: ColorCorona;
+}
+
+/**
+ * El color de una corona, medido sobre una foto del paciente, por tercios.
+ *
+ * ⚠️ **Va aqui y no solo en los pixeles del campo gaussiano a proposito.** El PLY lo lleva
+ * como color de cada gaussiana y eso basta para pintar, pero no para contestar «de que
+ * color es el 26» sin abrir 8 MB y buscar las gaussianas de esa pieza. Aqui es un dato con
+ * su soporte —`n_pixels`— y su origen —el `sha256` de la foto, nunca su nombre, que en una
+ * clinica lleva datos del paciente—.
+ */
+export interface ColorCorona {
+  readonly space: string;
+  readonly cervical: readonly [number, number, number];
+  readonly middle: readonly [number, number, number];
+  readonly incisal: readonly [number, number, number];
+  readonly from_photo: string;
+  readonly n_pixels: number;
+  readonly measured: boolean;
+  readonly note: string;
+  /**
+   * La pendiente por canal con la que el emisor descontó la caída del flash usando la
+   * encía del propio paciente como referencia, o ausente si esta pieza NO se corrigió.
+   *
+   * ⚠️ **Ausente no es cero: es «no comparable».** Una pieza sin corregir lleva dentro lo
+   * lejos que le llegó la luz. Sin corregir, un caso real recorría 22,7 puntos de `L*`
+   * entre el 21 y el 27 —el incisivo salía blanco y el molar marrón siendo la misma
+   * boca—; corregido recorre 5,6. El visor no necesita leer el número porque `note` ya lo
+   * dice con palabras, pero el campo se declara para que quien lea este tipo sepa que la
+   * comparación entre piezas depende de él.
+   */
+  readonly illumination_slope?: readonly [number, number, number];
 }
 
 export interface Medida {
@@ -77,8 +110,62 @@ export function fichaDe(fdi: number, p: Pieza | undefined, segmentada: boolean):
 
   return `<h4>Pieza ${fdi}</h4>
     ${filas.length ? `<dl class="ficha">${filas.join('')}</dl>` : ''}
+    ${p?.color ? bloqueColor(p.color) : ''}
     ${procedencia}
     ${huecos.map((h) => `<p class="hueco">${h}</p>`).join('')}`;
+}
+
+/**
+ * Los tres tercios con su muestra, su L*a*b* y lo que el color NO es.
+ *
+ * ⚠️ La nota del emisor se ensena entera y no se resume. Sin una referencia gris en el
+ * encuadre, el flash cayendo hacia el fondo de la boca entra en el numero: es color
+ * medido, no un tono de guia certificado, y quien mire esto tiene que leerlo aqui y no
+ * deducirlo de que la muestra se parezca a un A2.
+ */
+function bloqueColor(c: ColorCorona): string {
+  const tercios: readonly [string, readonly [number, number, number]][] = [
+    ['cervical', c.cervical],
+    ['medio', c.middle],
+    ['incisal', c.incisal],
+  ];
+  return `<div class="color">
+    <ul class="tonos">${tercios
+      .map(
+        ([nombre, lab]) => `<li>
+          <span class="muestra" style="background:${aCss(lab)}"></span>
+          <span class="tercio">${nombre}</span>
+          <span class="lab">L* ${lab[0].toFixed(1)} a* ${lab[1].toFixed(1)} b* ${lab[2].toFixed(1)}</span>
+        </li>`,
+      )
+      .join('')}</ul>
+    <p class="nota">${c.space} · ${c.n_pixels.toLocaleString()} px · ${c.from_photo}</p>
+    <p class="nota">⚠️ ${c.note}</p>
+  </div>`;
+}
+
+/**
+ * CIELAB a sRGB, D65, **solo para la muestra de la pantalla**.
+ *
+ * El dato que viaja es el L*a*b*, que es lo que se midio; esto es una conversion de
+ * presentacion y la pantalla de quien mira no esta calibrada. Por eso el numero se ensena
+ * al lado del cuadrito: si los dos no coinciden, el bueno es el numero.
+ */
+export function aCss(lab: readonly [number, number, number]): string {
+  const [L, a, b] = lab;
+  const fy = (L + 16) / 116;
+  const inversa = (t: number) => (t > 6 / 29 ? t ** 3 : 3 * (6 / 29) ** 2 * (t - 4 / 29));
+  const x = 0.95047 * inversa(fy + a / 500);
+  const y = 1.0 * inversa(fy);
+  const z = 1.08883 * inversa(fy - b / 200);
+  const canal = (v: number) => {
+    const g = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+    return Math.round(Math.min(1, Math.max(0, g)) * 255);
+  };
+  const r = canal(3.2406 * x - 1.5372 * y - 0.4986 * z);
+  const v = canal(-0.9689 * x + 1.8758 * y + 0.0415 * z);
+  const azul = canal(0.0557 * x - 0.204 * y + 1.057 * z);
+  return `rgb(${r} ${v} ${azul})`;
 }
 
 function fila(k: string, v: string): string {

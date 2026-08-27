@@ -31,6 +31,36 @@ export interface MetaSegmentacion {
     readonly n_labelled: number;
     readonly n_total: number;
   };
+  /**
+   * De qué pieza te puedes fiar al seleccionarla, si el emisor lo declara.
+   *
+   * ⚠️ **Sin esto el visor miente en silencio.** Enciende una corona que arrastra medio
+   * diente vecino, y lo que se lee al lado —color, pH, hallazgos— es correcto: quien mira
+   * concluye que la geometría también. El criterio sale del `p95` de
+   * `|ancho medido - tabla|` sobre 188 coronas etiquetadas por experto; contar coronas
+   * «demasiado anchas» no vale, porque las de experto lo fallan en el 77 %.
+   */
+  readonly per_tooth_boundary?: {
+    readonly criterion: string;
+    readonly note: string;
+    readonly teeth: Readonly<Record<string, {
+      readonly mesiodistal_mm: number;
+      readonly table_mm: number;
+      readonly excess_mm: number;
+      readonly within_expert_range: boolean;
+    }>>;
+  };
+}
+
+/** El aviso que le corresponde a una pieza, o `''` si su recorte esta declarado bueno. */
+export function avisoDeFrontera(meta: MetaSegmentacion | null, fdi: number): string {
+  const t = meta?.per_tooth_boundary?.teeth?.[String(fdi)];
+  if (!t || t.within_expert_range) return '';
+  const signo = t.excess_mm > 0 ? 'más ancha' : 'más estrecha';
+  return `⚠️ el recorte de esta pieza NO es de fiar: mide ${t.mesiodistal_mm.toFixed(1)} mm `
+    + `mesiodistales frente a ${t.table_mm.toFixed(1)} de tabla, `
+    + `${Math.abs(t.excess_mm).toFixed(1)} mm ${signo}. Al seleccionarla puede venir con `
+    + `superficie que no es suya`;
 }
 
 /** Los codigos FDI por vertice. `int16` little-endian, en el orden de la escena. */
