@@ -22,6 +22,8 @@ import { Apariencia, UMBRAL_ALFA_255 } from './Apariencia';
 import { Escena } from './Escena';
 import { construye3mf, regenera } from './Regenera';
 import { leePly } from '../uos/Ply';
+import { leeGlb } from '../uos/Glb';
+import { campoDesdeSplats, plyDesdeCampo } from '../uos/SplatsKhr';
 import { Splats } from './Splats';
 
 interface VistaJSON {
@@ -391,6 +393,44 @@ async function ponCapas(
 ): Promise<{ avisos: string[]; region: ColumnaGS | null }> {
   const avisos: string[] = [];
   let region: ColumnaGS | null = null;
+
+  // ⚠️ **La apariencia se busca PRIMERO dentro del glTF, y ése es todo el cambio.** El
+  // contenedor la lleva ahora como primitiva `KHR_gaussian_splatting` de `scene.glb`, que
+  // es lo que el §5.1 pedía desde el principio: un visor glTF conforme la dibuja sin saber
+  // nada de UOS. Este visor la lee de ahí y sólo cae al `.ply` suelto cuando el contenedor
+  // no trae la extensión —los que emitimos antes de hoy—, en vez de leer siempre el `.ply`
+  // y dejar la primitiva sin usar.
+  let deGlb = false;
+  const escena = uos.de('mesh_gs_scene').find((a) => a.media_type === 'model/gltf-binary');
+  if (escena) {
+    try {
+      const malla = leeGlb(await uos.bytes(escena));
+      if (malla.splats) {
+        // ⚠️ **El descriptor cuelga ahora de `asset.scene`, y sin él las etiquetas se
+        // leerían como medidas.** `KHR_gaussian_splatting` transporta gaussianas; no tiene
+        // dónde decir que `region_id` es inferencia con vocabulario ISO-3950, que `f_dc`
+        // es color medido corona a corona ni que `ao` es visualización. Antes ese sidecar
+        // colgaba del `.ply` de apariencia; al dejar de viajar el `.ply`, el panel de
+        // piezas se quedaba diciendo «procedencia no declarada» sobre unas etiquetas que
+        // sí la traen.
+        const d = await uos.sidecar<DescriptorGS>(escena);
+        region ??= d?.columns?.find((c) => c.name === 'region_id') ?? null;
+        const campo = campoDesdeSplats(malla.splats);
+        await apariencia.añade('asset.apariencia', plyDesdeCampo(campo), UMBRAL_ALFA_255);
+        splats.añadeApariencia(
+          'asset.apariencia', 'apariencia (KHR_gaussian_splatting)', campo,
+          { medida: false, nota: '', soloSeleccion: true },
+        );
+        deGlb = true;
+      }
+    } catch (e) {
+      avisos.push(
+        `la capa \`KHR_gaussian_splatting\` de la escena no se pudo leer, se usa el ` +
+          `\`.ply\` si viaja: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   for (const a of uos.de('mesh_gs_scene')) {
     // ⚠️ **La autoridad sobre qué es cada asset es su SIDECAR, no un tipo MIME.** Aquí
     // había un filtro por `application/x-ply` que me inventé: el manifiesto declara
@@ -415,7 +455,10 @@ async function ponCapas(
         ? [o[0]!, o[1]!, o[2]!] as [number, number, number]
         : undefined;
       if (d.profile === 'ash-gs-apariencia/1.0') {
+        // El sidecar se lee IGUAL aunque la capa venga del glTF: es donde se declara que
+        // `region_id` es inferencia y no medida, y la extensión no tiene dónde decirlo.
         region ??= d.columns?.find((c) => c.name === 'region_id') ?? null;
+        if (deGlb) continue;
         // Los bytes ya salieron del contenedor: se le pasan al rasterizador tal cual, sin
         // volver a leer nada. `leePly` de arriba nos dio además las columnas, que es lo
         // que la biblioteca NO expone y necesitamos para el picking.

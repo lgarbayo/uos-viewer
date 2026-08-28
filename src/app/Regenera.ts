@@ -21,6 +21,8 @@
 import type { Asset } from '../uos/Manifest';
 import { leeGlb } from '../uos/Glb';
 import { leePly } from '../uos/Ply';
+import type { CampoPly } from '../uos/Ply';
+import { campoDesdeSplats } from '../uos/SplatsKhr';
 import type { UosLoader } from '../uos/UosLoader';
 import { escribeZip } from '../uos/Zip';
 import { apagaSinDeclarar, colorDesdeGaussianas, rellenaHuecos } from '../uos/ColorMalla';
@@ -324,21 +326,14 @@ export async function regenera(
   calcula: (p: Peticion, progreso: (frac: number) => void) => Promise<Respuesta> = enWorker,
 ): Promise<Regenerado> {
   const escena = uos.porPrioridad.find((a) => a.uri.endsWith('.glb') && !a.external);
-  const apar = await primeraApariencia(uos);
   if (!escena) {
     throw new Error(
       'este contenedor no lleva `asset.scene`: sin geometría dentro no hay malla que ' +
         'regenerar. El manifiesto sólo declara `ash_reversible` cuando la lleva.',
     );
   }
-  if (!apar) {
-    throw new Error(
-      'este contenedor no lleva una capa `ash-gs-apariencia/1.0`: sin color por gaussiana ' +
-        'la malla saldría entera en gris, que no es color de nadie.',
-    );
-  }
 
-  avisa('leyendo la geometría del gemelo…');
+  avisa('leyendo el gemelo…');
   const malla = leeGlb(await uos.bytes(escena));
   // Los índices de todas las primitivas, seguidos, y el FDI llevado a cada vértice.
   const total = malla.primitivas.reduce((n, p) => n + p.indices.length, 0);
@@ -352,10 +347,41 @@ export async function regenera(
     for (const i of p.indices) fdiVertice[i] = p.fdi;
   }
 
-  avisa('leyendo el color por gaussiana…');
-  const campo = leePly(await uos.bytes(apar));
-  const esquema = (await uos.sidecar<DescriptorGS>(apar)) ?? {};
-  const col = enLineal(campo.columnas, esquema);
+  // ⚠️ **El color sale de la MISMA escena, no de un `.ply` aparte.** La capa de apariencia
+  // viaja dentro de `scene.glb` como primitiva `KHR_gaussian_splatting`; buscarla como
+  // asset suelto era lo que hacía falta cuando el contenedor la llevaba dos veces. Para
+  // contenedores antiguos —los que sí traen el `.ply`— se cae a él más abajo.
+  let campo: CampoPly | null = malla.splats ? campoDesdeSplats(malla.splats) : null;
+  if (!campo) {
+    const apar = await primeraApariencia(uos);
+    if (!apar) {
+      throw new Error(
+        'este contenedor no lleva capa de apariencia —ni primitiva ' +
+          '`KHR_gaussian_splatting` en la escena, ni `.ply` con perfil ' +
+          '`ash-gs-apariencia/1.0`—: sin color por gaussiana la malla saldría entera en ' +
+          'gris, que no es color de nadie.',
+      );
+    }
+    const crudo = leePly(await uos.bytes(apar));
+    const esquema = (await uos.sidecar<DescriptorGS>(apar)) ?? {};
+    campo = { n: crudo.n, columnas: enLineal(crudo.columnas, esquema), comentarios: {} };
+  } else {
+    // La primitiva ya llega en convención INRIA: `campoDesdeSplats` deshace las unidades
+    // de la extensión. Aquí hay que volver a lineal, que es lo que come el cálculo.
+    campo = {
+      n: campo.n,
+      columnas: enLineal(campo.columnas, {
+        columns: [
+          { name: 'opacity', unit: 'logit' },
+          { name: 'scale_0', unit: 'log(mm)' },
+          { name: 'scale_1', unit: 'log(mm)' },
+          { name: 'scale_2', unit: 'log(mm)' },
+        ],
+      }),
+      comentarios: {},
+    };
+  }
+  const col = campo.columnas;
   const falta = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'scale_0']
     .filter((n) => !col[n]);
   if (falta.length) {
@@ -364,6 +390,7 @@ export async function regenera(
         'calcular el color sin ellas.',
     );
   }
+
   const ng = col['x']!.length;
   const centros = new Float32Array(ng * 3);
   const fdc = new Float32Array(ng * 3);
@@ -400,7 +427,18 @@ export async function regenera(
   const meta = JSON.stringify({
     generado_por: 'uos-viewer',
     extension: 'ash_reversible/1.0',
-    desde: { geometria: escena.id, color: apar.id, sha256: { escena: escena.sha256, apariencia: apar.sha256 } },
+    // ⚠️ La procedencia se declara con el hash de lo que se leyó DE VERDAD. Ahora la
+    // geometría y el color salen del mismo asset —las primitivas de malla y la de
+    // `KHR_gaussian_splatting` de `scene.glb`— así que es un solo `sha256`, y decir dos
+    // sería fingir dos fuentes.
+    desde: {
+      asset: escena.id,
+      sha256: escena.sha256,
+      geometria: 'primitivas de malla con extras.uos_fdi',
+      color: malla.splats
+        ? 'primitiva KHR_gaussian_splatting de la misma escena'
+        : 'capa `.ply` con perfil ash-gs-apariencia/1.0 (contenedor anterior)',
+    },
     vertices: nv,
     triangulos: malla.triangulos,
     con_color_medido: res.medidos,
