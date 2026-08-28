@@ -60,6 +60,10 @@ export class Escena {
 
   constructor(private readonly lienzo: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas: lienzo, antialias: true });
+    // DPR nativo con tope 2, SIN supersampling de display: se midio que para este
+    // contenido el 2x no aporta nada visible y cuesta 4x de relleno. La leccion de
+    // por que no se "fuerza" tampoco desde la biblioteca de splats vive en
+    // `Apariencia.arranca`.
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.perspectiva = new PerspectiveCamera(FOV_GRADOS, 1, 0.1, 5000);
     this.ortografica = new OrthographicCamera(-1, 1, 1, -1, 0.1, 5000);

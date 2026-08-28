@@ -548,6 +548,10 @@ addEventListener('keydown', (ev) => {
       apariencia.nube(!apariencia.esNube);
       avisa(apariencia.esNube ? 'gaussianas como puntos' : 'gaussianas como splats');
       break;
+    // `n` NO existe: el supersampling de display se quitó después de medir que para
+    // este contenido no aporta nada visible y cuesta 4× de relleno. El renderer va a
+    // DPR nativo, y el `devicePixelRatio` de la biblioteca no se toca jamás (ver
+    // `Apariencia.arranca`).
     case 'Equal':
     case 'NumpadAdd':
       avisa(`tamaño de splat ×${apariencia.escala(0.05).toFixed(2)}`);

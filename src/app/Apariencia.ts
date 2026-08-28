@@ -118,6 +118,14 @@ export class Apariencia {
       // `f_rest_*` que falten, y sale el plano de antes, que es la degradación correcta.
       sphericalHarmonicsDegree: 1,
     });
+    // ⚠️ **Aqui NO se toca `devicePixelRatio`, y el porqué se midió.** El `SplatMesh`
+    // CACHA el valor al construirse y con él calcula el `viewport` del shader en cada
+    // fotograma, mientras el `Viewer` lee el suyo EN VIVO para el focal. Cambiarlo
+    // después de cargar desincroniza los dos: el focal crece pero el viewport no, y los
+    // splats salen al doble de su tamaño (o a la mitad al volver). El visor NO hace
+    // supersampling de display: se midió que para este contenido no aporta nada visible
+    // y cuesta 4× de relleno. El valor se queda en `window.devicePixelRatio`, que es el
+    // único estado consistente en cualquier DPR.
     return this.visor;
   }
 

@@ -99,6 +99,16 @@ declare module '@mkkellogg/gaussian-splats-3d' {
     getSplatScene(sceneIndex: number): SplatScene;
     readonly splatMesh: SplatMesh | null;
     camera: Camera;
+    /**
+     * Pixeles fisicos por pixel CSS que la biblioteca usa para el FOCAL del shader,
+     * leido en vivo en cada fotograma. ⚠️ NO se debe cambiar despues de cargar escenas:
+     * el `SplatMesh` cachea su propio valor al construirse y con el calcula el
+     * `viewport`, asi que cambiarlo aqui desincroniza focal y viewport y los splats
+     * salen al doble (o a la mitad) de su tamano. Este visor no hace supersampling de
+     * display (medido: sin efecto visible para este contenido); el valor se queda en
+     * `window.devicePixelRatio`.
+     */
+    devicePixelRatio: number;
   }
 
   /**
