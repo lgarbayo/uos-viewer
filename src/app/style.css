@@ -252,7 +252,7 @@ code { color: var(--acento); }
  * misma clase sale pequeña en la ficha flotante y legible dentro del modal, sin dos juegos
  * de reglas.
  */
-#cuerpo-modal { flex: 1 1 auto; min-height: 0; padding: 1rem; overflow: hidden;
+#cuerpo-modal { flex: 1 1 auto; min-height: 0; padding: 1rem; overflow-y: auto;
   font-size: 15px; }
 
 /* El reparto en columnas de cada modal. `minmax(0,…)` es lo que permite que una columna
