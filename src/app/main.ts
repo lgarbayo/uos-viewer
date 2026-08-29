@@ -342,7 +342,21 @@ const TONOS: Record<string, [number, number, number]> = {
   'asset.composite': [0.95, 0.72, 0.35],
   'asset.gs': [0.55, 0.9, 0.65],
   'asset.apariencia': [1.0, 1.0, 1.0],
+  // Las capas de densidad por HU (descomposición): falso color por densidad, de la más
+  // alta (esmalte/metal) a la más baja. NO significa tejido — distingue las capas.
+  'asset.field_densidad-muy-alta': [1.0, 0.32, 0.28],
+  'asset.field_densidad-alta': [0.95, 0.62, 0.28],
+  'asset.field_densidad-media': [0.45, 0.78, 0.95],
+  'asset.field_densidad-baja': [0.45, 0.5, 0.58],
 };
+
+/** Las capas de densidad por HU, en orden descendente de densidad. Teclas 1-4. */
+const CAPAS_HU = [
+  'asset.field_densidad-muy-alta',
+  'asset.field_densidad-alta',
+  'asset.field_densidad-media',
+  'asset.field_densidad-baja',
+];
 
 /**
  * Una columna del campo, tal y como la declara el sidecar.
@@ -548,6 +562,22 @@ addEventListener('keydown', (ev) => {
       apariencia.nube(!apariencia.esNube);
       avisa(apariencia.esNube ? 'gaussianas como puntos' : 'gaussianas como splats');
       break;
+    case 'Digit1':
+    case 'Digit2':
+    case 'Digit3':
+    case 'Digit4': {
+      // Enciende/apaga UNA capa de densidad por HU. Es el encendido clínico por densidad:
+      // como la atenuación se suma (Beer-Lambert), quitar una capa la quita del render sin
+      // tocar las demás. Tecla numérica, no un panel: los interruptores de capa se quitaron
+      // de la interfaz a propósito (vista previa cruda) y esto es solo el mando, discreto.
+      const id = CAPAS_HU[Number(ev.code.slice(-1)) - 1];
+      if (!id) break;
+      const capa = splats.capas.find((c) => c.id === id);
+      const encendida = !(capa?.encendida ?? true);
+      splats.enciende(id, encendida);
+      avisa(`${capa?.nombre ?? id}: ${encendida ? 'encendida' : 'apagada'}`);
+      break;
+    }
     // `n` NO existe: el supersampling de display se quitó después de medir que para
     // este contenido no aporta nada visible y cuesta 4× de relleno. El renderer va a
     // DPR nativo, y el `devicePixelRatio` de la biblioteca no se toca jamás (ver
