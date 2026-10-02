@@ -24,6 +24,7 @@ export interface Pieza {
   readonly agent?: string;
   readonly observed?: string;
   readonly color?: ColorCorona;
+  readonly details?: readonly DetalleValor[];
 }
 
 /**
@@ -79,6 +80,92 @@ export interface CapaClinica {
   readonly review: { readonly note: string; readonly reasons: readonly string[] };
 }
 
+export interface DetalleValor {
+  readonly field: string;
+  readonly value: unknown;
+  readonly provenance: Readonly<Record<string, unknown>>;
+  readonly alternative: boolean;
+  readonly selection?: string;
+}
+
+const objeto = (x: unknown): Record<string, unknown> =>
+  x !== null && typeof x === 'object' && !Array.isArray(x)
+    ? x as Record<string, unknown> : {};
+const lista = (x: unknown): unknown[] => Array.isArray(x) ? x : [];
+const numero = (x: unknown): number | undefined =>
+  typeof x === 'number' && Number.isFinite(x) ? x : undefined;
+export const escapa = (x: unknown): string => String(x ?? '')
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+/** Adapts both generations, retaining evidence for each value and alternative. */
+export function leeClinico(raw: unknown): CapaClinica {
+  const doc = objeto(raw);
+  if (!['ash-clinical/1.0', 'ash-clinical/2.0',
+        'histora-clinical/1.0', 'histora-clinical/2.0'].includes(String(doc['schema']))) {
+    throw new Error(`Esquema clínico no soportado: ${String(doc['schema'])}`);
+  }
+  const teeth = new Map<string, Pieza>();
+  for (const entrada of lista(doc['teeth'])) {
+    const t = objeto(entrada);
+    const fdi = String(t['fdi'] ?? '');
+    if (!/^\d{2}$/.test(fdi)) throw new Error('Entrada clínica sin FDI válido');
+    const previous = teeth.get(fdi);
+    const details: DetalleValor[] = [...(previous?.details ?? [])];
+    const values: Record<string, number> = {};
+    for (const field of ['ph', 'n_roots', 'n_canals']) {
+      const value = t[field];
+      const record = objeto(value);
+      const selected = numero(typeof value === 'number' ? value : record['value']);
+      if (selected !== undefined) values[field] = selected;
+      if (Object.keys(record).length) {
+        details.push({ field, value: record['value'], provenance: record,
+                       alternative: false, selection: String(record['selection'] ?? '') });
+        for (const alt of lista(record['alternatives'])) {
+          const a = objeto(alt);
+          details.push({ field, value: a['value'], provenance: a, alternative: true });
+        }
+      }
+    }
+    const finding = objeto(t['findings']);
+    const findings = lista(Array.isArray(t['findings']) ? t['findings'] : finding['value'])
+      .map((f) => typeof f === 'string' ? f : String(objeto(f)['display'] ?? ''))
+      .filter(Boolean);
+    for (const f of lista(finding['value'])) {
+      const a = objeto(f);
+      details.push({ field: 'hallazgo', value: a['display'],
+                     provenance: objeto(a['provenance']), alternative: false });
+    }
+    const colorRecord = objeto(t['color']);
+    const colorValue = objeto(colorRecord['value'] ?? t['color']);
+    const validColor = ['cervical', 'middle', 'incisal'].every(key => {
+      const lab = colorValue[key];
+      return Array.isArray(lab) && lab.length === 3 && lab.every(v => typeof v === 'number' && Number.isFinite(v));
+    });
+    if ('value' in colorRecord) details.push({ field: 'color', value: colorRecord['value'],
+      provenance: colorRecord, alternative: false });
+    teeth.set(fdi, {
+      ...previous, ...t, ...values, fdi,
+      // Unknown clinical scalar shapes never leak into the numeric UI.
+      ph: values['ph'] ?? previous?.ph,
+      n_roots: values['n_roots'] ?? previous?.n_roots,
+      n_canals: values['n_canals'] ?? previous?.n_canals,
+      color: validColor ? colorValue as unknown as ColorCorona : previous?.color,
+      findings: [...(previous?.findings ?? []), ...findings], details,
+    } as Pieza);
+  }
+  const vocabulary = doc['vocabulary'];
+  return {
+    ...doc, schema: String(doc['schema']),
+    vocabulary: typeof vocabulary === 'string' ? vocabulary : JSON.stringify(vocabulary ?? {}),
+    teeth: [...teeth.values()], measurements: lista(doc['measurements']),
+    regulatory: { layer: Number(objeto(doc['regulatory'])['layer'] ?? 0),
+                  note: String(objeto(doc['regulatory'])['note'] ?? '') },
+    review: { note: String(objeto(doc['review'])['note'] ?? ''),
+              reasons: lista(objeto(doc['review'])['reasons']).map(String) },
+  } as CapaClinica;
+}
+
 /** Por codigo FDI, para poder contestar al clic sin recorrer la lista cada vez. */
 export function porPieza(capa: CapaClinica): Map<string, Pieza> {
   return new Map(capa.teeth.map((t) => [t.fdi, t]));
@@ -97,6 +184,13 @@ export function fichaDe(fdi: number, p: Pieza | undefined, segmentada: boolean):
   if (p?.n_roots !== undefined) filas.push(fila('raíces', String(p.n_roots)));
   if (p?.n_canals !== undefined) filas.push(fila('conductos', String(p.n_canals)));
   if (p?.findings.length) filas.push(fila('hallazgos', p.findings.join(', ')));
+
+  for (const d of p?.details ?? []) {
+    const metadata = Object.fromEntries(Object.entries(d.provenance)
+      .filter(([k]) => !['value', 'alternatives'].includes(k)));
+    filas.push(fila(`${escapa(d.field)} · ${d.alternative ? 'alternativa' : 'procedencia'}`,
+      `<details><summary>ver procedencia</summary>${escapa(typeof d.value === 'object' ? JSON.stringify(d.value) : d.value)} <span class="nota">${escapa(JSON.stringify(metadata))}</span></details>`));
+  }
 
   const procedencia =
     p?.confidence !== undefined

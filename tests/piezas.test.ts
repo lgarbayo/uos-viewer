@@ -12,7 +12,7 @@
  * profundidad y no mezcla, que es la condicion de la que depende.
  */
 
-import { Scene } from 'three';
+import { Color, Object3D, PerspectiveCamera, Scene } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { Splats, TOPE_PRIMITIVAS } from '../src/app/Splats';
@@ -108,4 +108,32 @@ describe('el FDI por gaussiana', () => {
     // la unica respuesta correcta: no hay contra que preguntar.
     expect(s.piezaEn(null as never, null as never, 0, 0, 100, 100)).toBeNull();
   });
+});
+
+it('keeps appearance RGB out of the ID pass and restores scene state on failure', () => {
+  const scene = new Scene();
+  const appearance = new Object3D(); scene.add(appearance);
+  const splats = new Splats(scene);
+  splats.añadeApariencia('ap', 'appearance', campo(50), { soloSeleccion: true });
+  const camera = new PerspectiveCamera();
+  let code = 12;
+  let fail = false;
+  const renderer = {
+    getRenderTarget: () => null,
+    getClearColor: (color: Color) => color.set(0x123456),
+    getClearAlpha: () => 0.5,
+    setRenderTarget: () => {}, setClearColor: () => {}, clear: () => {},
+    render: () => { expect(appearance.visible).toBe(false); if (fail) throw new Error('render failed'); },
+    readRenderTargetPixels: (_target: unknown, _x: number, _y: number, _w: number, _h: number, pixel: Uint8Array) => {
+      pixel[0] = code;
+    },
+  };
+  expect(splats.piezaEn(renderer as never, camera, 0, 0, 100, 100)).toBe(12);
+  expect(appearance.visible).toBe(true);
+  code = 196;
+  expect(splats.piezaEn(renderer as never, camera, 0, 0, 100, 100)).toBeNull();
+  fail = true;
+  expect(() => splats.piezaEn(renderer as never, camera, 0, 0, 100, 100)).toThrow('render failed');
+  expect(appearance.visible).toBe(true);
+  expect(camera.view?.enabled).toBe(false);
 });

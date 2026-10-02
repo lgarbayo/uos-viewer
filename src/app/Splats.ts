@@ -25,6 +25,7 @@
 import {
   AdditiveBlending,
   Box3,
+  Color,
   BufferAttribute,
   BufferGeometry,
   NormalBlending,
@@ -683,6 +684,13 @@ export class Splats {
       });
     }
 
+    // The appearance rasterizer must not paint its RGB values into the ID buffer.
+    const own = new Set(this.nubes.values());
+    const others = this.scene.children.filter(child => !own.has(child as Points))
+      .map(child => ({ child, visible: child.visible }));
+    for (const item of others) item.child.visible = false;
+    const clearColor = renderer.getClearColor(new Color()).clone();
+    const clearAlpha = renderer.getClearAlpha();
     const antes = renderer.getRenderTarget();
     let leido = 0;
     try {
@@ -696,6 +704,8 @@ export class Splats {
     } finally {
       camara.clearViewOffset();
       renderer.setRenderTarget(antes);
+      renderer.setClearColor(clearColor, clearAlpha);
+      for (const item of others) item.child.visible = item.visible;
       for (const [id, p] of this.nubes) {
         const m = materiales.get(id);
         if (m) {
@@ -705,7 +715,7 @@ export class Splats {
         p.visible = visibles.get(id) ?? p.visible;
       }
     }
-    return leido > 0 ? leido : null;
+    return conFdi.some(c => c.piezas.includes(leido)) ? leido : null;
   }
 
   enciende(id: string, visible: boolean): void {

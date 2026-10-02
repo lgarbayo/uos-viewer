@@ -197,7 +197,7 @@ code { color: var(--acento); }
  */
 #ficha { position: fixed; z-index: 15; left: .9rem; width: 23rem;
   bottom: calc(var(--alto-carta, 7rem) + .8rem);
-  max-height: calc(100vh - var(--alto-carta, 7rem) - 5.6rem);
+  max-height: calc(100vh - var(--alto-carta, 7rem) - 10.6rem);
   overflow-y: auto; overscroll-behavior: contain; }
 /* Y cuando de verdad hay mas texto debajo, se ve: una barra fina en vez de un corte seco. */
 #ficha::-webkit-scrollbar { width: 6px; }
@@ -209,9 +209,9 @@ code { color: var(--acento); }
   backdrop-filter: blur(8px); box-shadow: var(--sombra);
 }
 #ficha h4 { margin: 0 0 .4rem; font-size: .95rem; color: var(--acento); }
-#ficha .ficha { display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; }
+#ficha .ficha { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: .1rem .75rem; margin: 0; }
 #ficha dt { color: var(--tenue); }
-#ficha dd { margin: 0; }
+#ficha dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 #ficha .cerrar { position: absolute; top: .3rem; right: .4rem; }
 .cerrar { background: none; border: 0; color: var(--tenue); cursor: pointer;
   font-size: .9rem; padding: .1rem .3rem; font-family: inherit; }

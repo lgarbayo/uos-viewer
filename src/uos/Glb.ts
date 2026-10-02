@@ -88,7 +88,7 @@ interface Vista {
   byteStride?: number;
 }
 
-export function leeGlb(crudo: Uint8Array): MallaGlb {
+export function leeGlb(crudo: Uint8Array, soloSplats = false): MallaGlb {
   const v = new DataView(crudo.buffer, crudo.byteOffset, crudo.byteLength);
   if (v.byteLength < 20 || v.getUint32(0, true) !== 0x46546c67) {
     throw new Error('no es un GLB: falta la firma `glTF` en los primeros cuatro bytes.');
@@ -144,30 +144,34 @@ export function leeGlb(crudo: Uint8Array): MallaGlb {
   // contenedor con la extensión reventaba al abrirse diciendo que las primitivas no
   // comparten accessor, que es cierto y no es un problema.
   const deMalla = prims.filter((p) => !p.extensions?.['KHR_gaussian_splatting']);
-  const posAcc = deMalla[0]?.attributes['POSITION'];
-  if (posAcc === undefined) throw new Error('la primera primitiva no declara POSITION.');
-  if (deMalla.some((p) => p.attributes['POSITION'] !== posAcc)) {
-    throw new Error(
-      'las primitivas no comparten el mismo accessor POSITION: este lector asume una ' +
-        'numeración de vértices única para toda la malla, que es lo que hace que el color ' +
-        'se calcule una vez por vértice.',
-    );
-  }
+  let copiaPos = new Float32Array(0);
+  if (deMalla.length || !soloSplats) {
+    const posAcc = deMalla[0]?.attributes['POSITION'];
+    if (posAcc === undefined) throw new Error('la primera primitiva no declara POSITION.');
+    if (deMalla.some((p) => p.attributes['POSITION'] !== posAcc)) {
+      throw new Error(
+        'las primitivas no comparten el mismo accessor POSITION: este lector asume una ' +
+          'numeración de vértices única para toda la malla, que es lo que hace que el color ' +
+          'se calcule una vez por vértice.',
+      );
+    }
 
-  const { vista: vp, base: bp, acc: ap } = trozo(posAcc);
-  if (ap.type !== 'VEC3' || ap.componentType !== 5126) {
-    throw new Error(`POSITION es ${ap.type}/${ap.componentType}: se espera VEC3 de float32.`);
+    const { vista: vp, base: bp, acc: ap } = trozo(posAcc);
+    if (ap.type !== 'VEC3' || ap.componentType !== 5126) {
+      throw new Error(`POSITION es ${ap.type}/${ap.componentType}: se espera VEC3 de float32.`);
+    }
+    if (vp.byteStride !== undefined && vp.byteStride !== 12) {
+      throw new Error(`POSITION viene entrelazado (stride ${vp.byteStride}): no soportado.`);
+    }
+    // ⚠️ **Se COPIA en vez de mapear, y hace falta.** El chunk BIN empieza donde lo deje el
+    // JSON y el propio GLB sale de una entrada del ZIP, así que su offset absoluto no tiene
+    // por qué ser múltiplo de 4 — y un `Float32Array` construido sobre un offset no alineado
+    // lanza `RangeError`. Copiar los bytes a un buffer propio cuesta 1,3 MB una vez y quita
+    // una clase entera de fallos que sólo aparecerían con ciertos contenedores.
+    copiaPos = new Float32Array(ap.count * 3);
+    new Uint8Array(copiaPos.buffer).set(bin.subarray(bp, bp + ap.count * 12));
+
   }
-  if (vp.byteStride !== undefined && vp.byteStride !== 12) {
-    throw new Error(`POSITION viene entrelazado (stride ${vp.byteStride}): no soportado.`);
-  }
-  // ⚠️ **Se COPIA en vez de mapear, y hace falta.** El chunk BIN empieza donde lo deje el
-  // JSON y el propio GLB sale de una entrada del ZIP, así que su offset absoluto no tiene
-  // por qué ser múltiplo de 4 — y un `Float32Array` construido sobre un offset no alineado
-  // lanza `RangeError`. Copiar los bytes a un buffer propio cuesta 1,3 MB una vez y quita
-  // una clase entera de fallos que sólo aparecerían con ciertos contenedores.
-  const copiaPos = new Float32Array(ap.count * 3);
-  new Uint8Array(copiaPos.buffer).set(bin.subarray(bp, bp + ap.count * 12));
 
   /** Un accessor de float32 (SCALAR/VEC3/VEC4) como `Float32Array` plano. */
   const flotantes = (i: number, comps: number): Float32Array => {
@@ -276,7 +280,7 @@ export function leeGlb(crudo: Uint8Array): MallaGlb {
     primitivas.push({ indices: idx, fdi: Number.isFinite(fdi) ? fdi : null });
     triangulos += acc.count / 3;
   }
-  if (!primitivas.length) throw new Error('el GLB no trae primitivas con índices.');
+  if (!primitivas.length && !(soloSplats && splats)) throw new Error('el GLB no trae primitivas con índices.');
 
   return { posiciones: copiaPos, primitivas, triangulos, splats };
 }

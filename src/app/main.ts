@@ -14,7 +14,7 @@
  */
 
 import type { CapaClinica, Pieza } from '../uos/Clinico';
-import { aCss, fichaDe, porPieza } from '../uos/Clinico';
+import { aCss, escapa, fichaDe, leeClinico, porPieza } from '../uos/Clinico';
 import { esProvisional } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader } from '../uos/UosLoader';
@@ -23,6 +23,7 @@ import { Escena } from './Escena';
 import { construye3mf, regenera } from './Regenera';
 import { leePly } from '../uos/Ply';
 import { leeGlb } from '../uos/Glb';
+import { leeEtiquetas } from '../uos/Etiquetas';
 import { campoDesdeSplats, plyDesdeCampo } from '../uos/SplatsKhr';
 import { Splats } from './Splats';
 
@@ -401,10 +402,10 @@ async function ponCapas(
   // no trae la extensión —los que emitimos antes de hoy—, en vez de leer siempre el `.ply`
   // y dejar la primitiva sin usar.
   let deGlb = false;
-  const escena = uos.de('mesh_gs_scene').find((a) => a.media_type === 'model/gltf-binary');
-  if (escena) {
+  for (const escena of uos.de('mesh_gs_scene').filter(
+    (a) => !a.external && a.media_type === 'model/gltf-binary')) {
     try {
-      const malla = leeGlb(await uos.bytes(escena));
+      const malla = leeGlb(await uos.bytes(escena), true);
       if (malla.splats) {
         // ⚠️ **El descriptor cuelga ahora de `asset.scene`, y sin él las etiquetas se
         // leerían como medidas.** `KHR_gaussian_splatting` transporta gaussianas; no tiene
@@ -415,10 +416,20 @@ async function ponCapas(
         // sí la traen.
         const d = await uos.sidecar<DescriptorGS>(escena);
         region ??= d?.columns?.find((c) => c.name === 'region_id') ?? null;
-        const campo = campoDesdeSplats(malla.splats);
-        await apariencia.añade('asset.apariencia', plyDesdeCampo(campo), UMBRAL_ALFA_255);
+        let campo = campoDesdeSplats(malla.splats);
+        const inferred = await leeEtiquetas(uos, escena, campo.n, malla.splats.posiciones);
+        if (inferred) {
+          campo = { ...campo, columnas: { ...campo.columnas,
+            region_id: Float32Array.from(inferred.labels) } };
+          region = { name: 'region_id', measured: false,
+            derived_from: inferred.meta.model?.name ?? inferred.asset.id,
+            vocabulary: inferred.meta.encoding?.vocabulary ?? null };
+          avisos.push('Selección dental basada en segmentación inferida; las fronteras requieren revisión.');
+        } else if (!malla.splats.regionId) avisos.push(
+          `${escena.id}: apariencia sin etiquetas FDI; no permite aislar piezas.`);
+        await apariencia.añade(escena.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
         splats.añadeApariencia(
-          'asset.apariencia', 'apariencia (KHR_gaussian_splatting)', campo,
+          escena.id, 'apariencia inferida (KHR_gaussian_splatting)', campo,
           { medida: false, nota: '', soloSeleccion: true },
         );
         deGlb = true;
@@ -440,7 +451,8 @@ async function ponCapas(
     if (a.media_type === 'model/gltf-binary') continue;
     const d = await uos.sidecar<DescriptorGS>(a);
     if (!d?.profile) continue;
-    if (d.profile !== 'ash-twin/1.0' && d.profile !== 'ash-gs-apariencia/1.0') {
+    if (!['ash-twin/1.0', 'histora-twin/1.0', 'histora-twin-fitted/1.0',
+          'ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'].includes(d.profile)) {
       avisos.push(
         `${a.id}: perfil \`${d.profile}\`, que no es \`ash-twin/1.0\` ni ` +
           '`ash-gs-apariencia/1.0`. No se pinta: sus columnas se llaman igual y no ' +
@@ -449,12 +461,15 @@ async function ponCapas(
       continue;
     }
     try {
-      const campo = leePly(await uos.bytes(a));
+      let campo = leePly(await uos.bytes(a));
+      const inferred = await leeEtiquetas(uos, a, campo.n);
+      if (inferred) campo = { ...campo, columnas: { ...campo.columnas,
+        region_id: Float32Array.from(inferred.labels) } };
       const o = campo.comentarios['origin']?.split(/[\s,]+/).map(Number);
       const origen = o && o.length === 3 && o.every(Number.isFinite)
         ? [o[0]!, o[1]!, o[2]!] as [number, number, number]
         : undefined;
-      if (d.profile === 'ash-gs-apariencia/1.0') {
+      if (['ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'].includes(d.profile)) {
         // El sidecar se lee IGUAL aunque la capa venga del glTF: es donde se declara que
         // `region_id` es inferencia y no medida, y la extensión no tiene dónde decirlo.
         region ??= d.columns?.find((c) => c.name === 'region_id') ?? null;
@@ -462,7 +477,7 @@ async function ponCapas(
         // Los bytes ya salieron del contenedor: se le pasan al rasterizador tal cual, sin
         // volver a leer nada. `leePly` de arriba nos dio además las columnas, que es lo
         // que la biblioteca NO expone y necesitamos para el picking.
-        await apariencia.añade(a.id, await uos.bytes(a), UMBRAL_ALFA_255);
+        await apariencia.añade(a.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
         splats.añadeApariencia(a.id, d.role ?? a.id, campo, {
           origen,
           medida: d.measured === true,
@@ -698,8 +713,12 @@ async function abre(fichero: File): Promise<void> {
     // —uno solo, no uno por contenedor abierto— así que tiene que poder consultarlo.
     piezas = new Map<string, Pieza>();
     if (docClinico) {
-      clinico = JSON.parse(new TextDecoder().decode(await uos.bytes(docClinico)));
-      if (clinico) piezas = porPieza(clinico);
+      try {
+        clinico = leeClinico(JSON.parse(new TextDecoder().decode(await uos.bytes(docClinico))));
+        piezas = porPieza(clinico);
+      } catch (e) {
+        avisosCapas.push(`No se pudo interpretar la capa clínica: ${String(e)}`);
+      }
     }
 
     // `reparos` del loader es de solo lectura a proposito —es lo que el contenedor
@@ -760,6 +779,26 @@ async function abre(fichero: File): Promise<void> {
     }
 
 /* --- esquina: contenedor ------------------------------------------------ */
+    let fidelityHtml = '';
+    const fidelity = uos.porPrioridad.find((a) => a.id === 'asset.fidelity_provenance');
+    if (fidelity) {
+      try {
+        const audit = JSON.parse(new TextDecoder().decode(await uos.bytes(fidelity))) as {
+          assets?: Record<string, { origin?: string; source_status?: string;
+            prior_history_unknown?: boolean; introduced_losses?: unknown[];
+            inherited_losses?: unknown[]; process?: { repeatability?: { state?: string } } }>;
+        };
+        fidelityHtml = `<div class="bloque"><h3>Fidelidad y procedencia</h3>
+          <p class="nota">Declaraciones del emisor; no certifican aptitud clínica.
+          Desconocido significa que no hay evidencia suficiente.</p>
+          <ul>${Object.entries(audit.assets ?? {}).map(([id, a]) => `<li>
+            <b>${escapa(id)}</b> · origen ${escapa(a.origin ?? 'unknown')} ·
+            fuentes ${escapa(a.source_status ?? 'unresolved')} ·
+            historia ${a.prior_history_unknown === false ? 'declarada' : 'desconocida'} ·
+            pérdidas registradas ${(a.introduced_losses?.length ?? 0) + (a.inherited_losses?.length ?? 0)} ·
+            repetibilidad ${escapa(a.process?.repeatability?.state ?? 'unknown')}</li>`).join('')}</ul></div>`;
+      } catch (e) { reparos.push({ grave: false, texto: `Fidelidad no interpretable: ${String(e)}` }); }
+    }
     const fuera = uos.porPrioridad.filter((a) => a.external).length;
     modales.set('contenedor', {
       titulo: 'Contenedor · assets, registraciones y reparos',
@@ -772,7 +811,7 @@ async function abre(fichero: File): Promise<void> {
        * contenedor — que es exactamente la pregunta que se viene a hacer aquí. En rejilla
        * caben los diecinueve a la vez.
        */
-      html: `<div class="filas">
+      html: `<div class="filas">${fidelityHtml}
         <div class="bloque">
           <h3>Assets · <span class="n">${uos.porPrioridad.length}</span> · por prioridad de
             carga${fuera ? ` · <span class="n">${fuera}</span> declarado(s) fuera` : ''}</h3>
@@ -801,7 +840,7 @@ async function abre(fichero: File): Promise<void> {
         </div>
         <div class="cols cols-3">
           <div class="bloque">
-            <h3>Reversible · <span class="n">ash_reversible/1.0</span></h3>
+            <h3>Regeneración local · geometría y apariencia</h3>
             <div class="desliza">
               <p class="nota">El STL mejorado <b>no viaja</b> dentro: serían 19 MB para
                 duplicar una geometría que este contenedor sabe reconstruir. De
@@ -897,7 +936,7 @@ async function abre(fichero: File): Promise<void> {
                 ${x.out_of_range ? '<span class="l3">fuera</span>' : ''}</li>`).join('')
                 || '<li class="nota">el informe no trae medidas globales</li>'}</ul>
               <p class="nota">${clinico.schema} — extensión del emisor, no UOS v0.2 ·
-                Layer ${clinico.regulatory.layer} · ${clinico.vocabulary}</p>
+                Layer ${clinico.regulatory.layer} · ${escapa(clinico.vocabulary)}</p>
             </div>
           </div>
           <div class="bloque">
