@@ -178,3 +178,21 @@ modelo vive en `derived/`, que es desmontable por diseño.
 
 MIT. El formato es un borrador abierto; una implementación de referencia que no se pueda
 copiar no sirve de referencia.
+
+## Compatibilidad del complete case de octubre de 2026
+
+Lee los documentos clínicos `ash-clinical/1.0` e `histora-clinical/2.0`, incluyendo
+valores con procedencia individual, alternativas y campos ausentes. Un documento
+clínico no soportado se comunica sin interrumpir la visualización.
+
+La apariencia puede estar en la escena original o en un GLB separado bajo
+`derived/`. La regeneración conserva la identidad y el hash de ambas fuentes.
+El panel Contenedor presenta el registro de fidelidad declarado por el emisor;
+no valida evidencia ni acredita aptitud clínica. Se mantienen los perfiles de
+agosto y se reconocen los perfiles `histora-*` explícitamente soportados.
+
+Las etiquetas FDI pueden viajar como assets `derived_seg` separados, indexados
+por gaussiana o por vértice. Se verifica su fuente, hash, recuento y, cuando existe,
+el hash de posiciones antes de aplicarlas. La selección y el aislamiento muestran
+la ficha clínica aunque las fronteras de la segmentación requieran revisión.
+La exportación conserva las etiquetas inferidas y su procedencia.

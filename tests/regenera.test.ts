@@ -24,9 +24,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
-import { apagaSinDeclarar, colorDesdeGaussianas, rellenaHuecos } from '../src/uos/ColorMalla';
-import { leeGlb } from '../src/uos/Glb';
-import { leePly } from '../src/uos/Ply';
 import { calculaAqui, construye3mf, regenera } from '../src/app/Regenera';
 import { NodeFileReader } from '../src/uos/NodeReader';
 import { UosLoader } from '../src/uos/UosLoader';
@@ -35,9 +32,6 @@ const CORE = process.env['UOS_CORE'] ?? '';
 const REF = process.env['UOS_PLY_REF'] ?? '';
 const REF3MF = process.env['UOS_3MF_REF'] ?? '';
 const hay = (p: string) => p !== '' && existsSync(p);
-
-interface ColumnaGS { readonly name?: string; readonly unit?: string }
-interface DescriptorGS { readonly profile?: string; readonly columns?: readonly ColumnaGS[] }
 
 /** El PLY de referencia: `rgb` y `medido` por vértice. */
 function refDe(ruta: string): { rgb: Uint8Array; medido: Uint8Array; n: number } {
@@ -64,71 +58,21 @@ describe.runIf(hay(CORE) && hay(REF))('la arcada regenerada por el visor', () =>
   it('da el MISMO color que el pipeline en Python', async () => {
     const uos = await UosLoader.abrir(new NodeFileReader(CORE));
 
-    const escena = uos.porPrioridad.find((a) => a.uri.endsWith('.glb') && !a.external);
-    expect(escena, 'el contenedor no lleva `asset.scene`').toBeDefined();
-    const malla = leeGlb(await uos.bytes(escena!));
-
-    let apar = null;
-    for (const a of uos.de('mesh_gs_scene')) {
-      if (a.external || a.media_type === 'model/gltf-binary') continue;
-      const d = await uos.sidecar<DescriptorGS>(a);
-      if (d?.profile === 'ash-gs-apariencia/1.0') { apar = a; break; }
+    const r = await regenera(uos, () => {}, calculaAqui);
+    const malla = { posiciones: r.posiciones };
+    const rgb = r.rgb;
+    const raw = Buffer.from(r.ply);
+    const start = raw.indexOf('end_header\n') + 'end_header\n'.length;
+    const medido = Uint8Array.from({ length: r.vertices }, (_, i) => raw[start + i * 18 + 17]!);
+    expect(r.conFdi).toBeGreaterThan(0);
+    expect(new DataView(r.stl.buffer).getUint32(80, true)).toBe(r.triangulos);
+    expect(r.stl.length).toBe(84 + r.triangulos * 50);
+    const provenance = JSON.parse(r.meta).desde;
+    expect(provenance.color_sha256).toBeDefined();
+    if (uos.porPrioridad.some(a => a.id === 'asset.seg_teeth')) {
+      expect(provenance.etiquetas_asset).toBe('asset.seg_teeth');
+      expect(provenance.etiquetas_sha256).toBeDefined();
     }
-    expect(apar, 'el contenedor no lleva capa de apariencia').not.toBeNull();
-
-    const campo = leePly(await uos.bytes(apar!));
-    const esquema = (await uos.sidecar<DescriptorGS>(apar!)) ?? {};
-    const col: Record<string, Float32Array> = {};
-    for (const [k, v] of Object.entries(campo.columnas)) col[k] = Float32Array.from(v);
-    for (const c of esquema.columns ?? []) {
-      const x = c.name ? col[c.name] : undefined;
-      if (!x) continue;
-      const u = c.unit ?? '';
-      if (u === 'logit') for (let i = 0; i < x.length; i++) x[i] = 1 / (1 + Math.exp(-x[i]!));
-      else if (u.startsWith('log')) for (let i = 0; i < x.length; i++) x[i] = Math.exp(x[i]!);
-    }
-
-    const ng = col['x']!.length;
-    const centros = new Float32Array(ng * 3);
-    const fdc = new Float32Array(ng * 3);
-    const sigma = new Float32Array(ng);
-    for (let i = 0; i < ng; i++) {
-      centros[i * 3] = col['x']![i]!;
-      centros[i * 3 + 1] = col['y']![i]!;
-      centros[i * 3 + 2] = col['z']![i]!;
-      fdc[i * 3] = col['f_dc_0']![i]!;
-      fdc[i * 3 + 1] = col['f_dc_1']![i]!;
-      fdc[i * 3 + 2] = col['f_dc_2']![i]!;
-      sigma[i] = (col['scale_0']![i]! + col['scale_1']![i]! + col['scale_2']![i]!) / 3;
-    }
-
-    const total = malla.primitivas.reduce((n, p) => n + p.indices.length, 0);
-    const indices = new Uint32Array(total);
-    const fdiVertice = new Int16Array(malla.posiciones.length / 3);
-    let o = 0;
-    for (const p of malla.primitivas) {
-      indices.set(p.indices, o);
-      o += p.indices.length;
-      if (p.fdi === null) continue;
-      for (const i of p.indices) fdiVertice[i] = p.fdi;
-    }
-
-    const doc = uos.de('document').find(
-      (a) => !a.external && a.uri.startsWith('clinical/') && a.media_type === 'application/json',
-    );
-    const capa = doc
-      ? (JSON.parse(new TextDecoder().decode(await uos.bytes(doc))) as {
-          teeth?: { fdi?: string | number; color?: unknown }[];
-        })
-      : { teeth: [] };
-    const conColor = (capa.teeth ?? []).filter((x) => x.color).map((x) => Number(x.fdi));
-
-    const { rgb, medido } = colorDesdeGaussianas(
-      { posiciones: malla.posiciones, indices, fdiVertice, centros, fdc, opacidad: col['opacity']!, sigma, conColor },
-      () => {},
-    );
-    apagaSinDeclarar(fdiVertice, rgb, medido, conColor);
-    rellenaHuecos(indices, fdiVertice, rgb, medido);
 
     const ref = refDe(REF);
     expect(ref.n).toBe(malla.posiciones.length / 3);
@@ -165,6 +109,20 @@ describe.runIf(hay(CORE) && hay(REF))('la arcada regenerada por el visor', () =>
       dispares.size,
       `${dispares.size} vértice(s) con algún canal distinto, el peor en ${peor}/255`,
     ).toBe(0);
+    const referenceStl = REF.replace(/\.ply$/, '.stl');
+    if (hay(referenceStl)) {
+      const reference = readFileSync(referenceStl);
+      const actual = Buffer.from(r.stl);
+      expect(actual.length).toBe(reference.length);
+      let different = 0;
+      for (let t = 0; t < r.triangulos; t++) {
+        // Normals may differ in arithmetic precision; carried vertex positions and
+        // per-face colour attributes must match exactly.
+        const start = 84 + t * 50 + 12;
+        if (!actual.subarray(start, start + 38).equals(reference.subarray(start, start + 38))) different++;
+      }
+      expect(different, 'triangles with different geometry or colour').toBe(0);
+    }
   }, 120_000);
 });
 

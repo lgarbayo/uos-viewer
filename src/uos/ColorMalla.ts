@@ -36,6 +36,7 @@ export interface Peticion {
   readonly centros: Float32Array;
   /** `f_dc_0..2` por gaussiana. */
   readonly fdc: Float32Array;
+  readonly colorFloat32?: boolean;
   /** Opacidad ya en lineal (el logit deshecho por quien lee el sidecar). */
   readonly opacidad: Float32Array;
   /** Sigma media por gaussiana, en mm (el logaritmo ya deshecho). */
@@ -104,6 +105,10 @@ function rejilla(centros: Float32Array, paso: number) {
 export function colorDesdeGaussianas(p: Peticion, avisa: (frac: number) => void) {
   const nv = p.posiciones.length / 3;
   const ng = p.sigma.length;
+  // The carried GLB uses float32 coefficients: match NumPy float32 arithmetic
+  // before the final uint8 truncation, rather than shifting a quantisation boundary.
+  const color = (v: number) => Math.min(1, Math.max(0, p.colorFloat32
+    ? Math.fround(Math.fround(v * Math.fround(C0)) + 0.5) : v * C0 + 0.5));
 
   // El tope de búsqueda: el alcance de las gaussianas más grandes. Igual que el emisor,
   // que usa el percentil 99 para no dejar que una sola gaussiana enorme infle la rejilla.
@@ -181,9 +186,9 @@ export function colorDesdeGaussianas(p: Peticion, avisa: (frac: number) => void)
       if (d <= ALCANCE_SIGMAS * s) cubierto = true;
       const w = p.opacidad[i]! * Math.exp(-0.5 * ((d / s) ** 2));
       total += w;
-      r += w * Math.min(1, Math.max(0, p.fdc[i * 3]! * C0 + 0.5));
-      vd += w * Math.min(1, Math.max(0, p.fdc[i * 3 + 1]! * C0 + 0.5));
-      b += w * Math.min(1, Math.max(0, p.fdc[i * 3 + 2]! * C0 + 0.5));
+      r += w * color(p.fdc[i * 3]!);
+      vd += w * color(p.fdc[i * 3 + 1]!);
+      b += w * color(p.fdc[i * 3 + 2]!);
     }
     if (total > 1e-6 && cubierto) {
       medido[v] = 1;

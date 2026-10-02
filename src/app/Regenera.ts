@@ -20,6 +20,7 @@
 
 import type { Asset } from '../uos/Manifest';
 import { leeGlb } from '../uos/Glb';
+import { leeEtiquetas } from '../uos/Etiquetas';
 import { leePly } from '../uos/Ply';
 import type { CampoPly } from '../uos/Ply';
 import { campoDesdeSplats } from '../uos/SplatsKhr';
@@ -325,7 +326,8 @@ export async function regenera(
   // el test de color.
   calcula: (p: Peticion, progreso: (frac: number) => void) => Promise<Respuesta> = enWorker,
 ): Promise<Regenerado> {
-  const escena = uos.porPrioridad.find((a) => a.uri.endsWith('.glb') && !a.external);
+  const escena = uos.porPrioridad.find((a) => a.id === 'asset.scene')
+    ?? uos.porPrioridad.find((a) => a.uri.endsWith('.glb') && !a.external);
   if (!escena) {
     throw new Error(
       'este contenedor no lleva `asset.scene`: sin geometría dentro no hay malla que ' +
@@ -347,11 +349,23 @@ export async function regenera(
     for (const i of p.indices) fdiVertice[i] = p.fdi;
   }
 
+  const etiquetas = await leeEtiquetas(uos, escena, fdiVertice.length, malla.posiciones);
+  if (etiquetas) fdiVertice.set(etiquetas.labels);
+
   // ⚠️ **El color sale de la MISMA escena, no de un `.ply` aparte.** La capa de apariencia
   // viaja dentro de `scene.glb` como primitiva `KHR_gaussian_splatting`; buscarla como
   // asset suelto era lo que hacía falta cuando el contenedor la llevaba dos veces. Para
   // contenedores antiguos —los que sí traen el `.ply`— se cae a él más abajo.
-  let campo: CampoPly | null = malla.splats ? campoDesdeSplats(malla.splats) : null;
+  let fuenteColor = escena;
+  let splatsColor = malla.splats;
+  if (!splatsColor) {
+    for (const a of uos.de('mesh_gs_scene')) {
+      if (a.external || a.media_type !== 'model/gltf-binary' || a.id === escena.id) continue;
+      const separado = leeGlb(await uos.bytes(a), true);
+      if (separado.splats) { splatsColor = separado.splats; fuenteColor = a; break; }
+    }
+  }
+  let campo: CampoPly | null = splatsColor ? campoDesdeSplats(splatsColor) : null;
   if (!campo) {
     const apar = await primeraApariencia(uos);
     if (!apar) {
@@ -362,6 +376,7 @@ export async function regenera(
           'gris, que no es color de nadie.',
       );
     }
+    fuenteColor = apar;
     const crudo = leePly(await uos.bytes(apar));
     const esquema = (await uos.sidecar<DescriptorGS>(apar)) ?? {};
     campo = { n: crudo.n, columnas: enLineal(crudo.columnas, esquema), comentarios: {} };
@@ -405,7 +420,10 @@ export async function regenera(
     fdc[i * 3] = col['f_dc_0']![i]!;
     fdc[i * 3 + 1] = col['f_dc_1']![i]!;
     fdc[i * 3 + 2] = col['f_dc_2']![i]!;
-    sigma[i] = (s0[i]! + s1[i]! + s2[i]!) / 3;
+    sigma[i] = splatsColor
+      ? Math.fround(Math.fround(Math.fround(splatsColor.escala[i * 3]! + splatsColor.escala[i * 3 + 1]!)
+          + splatsColor.escala[i * 3 + 2]!) / 3)
+      : (s0[i]! + s1[i]! + s2[i]!) / 3;
   }
 
   // ⚠️ **Qué piezas tienen color DECLARADO, no cuáles el campo sabe pintar.** El campo
@@ -414,8 +432,8 @@ export async function regenera(
 
   avisa(`mezclando ${(malla.posiciones.length / 3).toLocaleString()} vértices…`);
   const peticion: Peticion = {
-    posiciones: malla.posiciones, indices, fdiVertice,
-    centros, fdc, opacidad: col['opacity']!, sigma, conColor,
+    posiciones: malla.posiciones, indices, fdiVertice, colorFloat32: splatsColor !== null,
+    centros, fdc, opacidad: splatsColor?.opacidad ?? col['opacity']!, sigma, conColor,
   };
   const res = await calcula(peticion, (frac) =>
     avisa(`mezclando color… ${Math.round(frac * 100)} %`));
@@ -434,9 +452,16 @@ export async function regenera(
     desde: {
       asset: escena.id,
       sha256: escena.sha256,
-      geometria: 'primitivas de malla con extras.uos_fdi',
-      color: malla.splats
-        ? 'primitiva KHR_gaussian_splatting de la misma escena'
+      geometria: 'primitivas de malla del asset de geometría declarado',
+      etiquetas_asset: etiquetas?.asset.id ?? null,
+      etiquetas_sha256: etiquetas?.asset.sha256 ?? null,
+      etiquetas_origin: 'inferred',
+      color_asset: fuenteColor.id,
+      color_sha256: fuenteColor.sha256,
+      color_origin: fuenteColor.regulatory.layer === 3 ? 'inferred' : 'declared',
+      clinical_validation: 'not_established',
+      color: splatsColor
+        ? 'primitiva KHR_gaussian_splatting del asset de color declarado'
         : 'capa `.ply` con perfil ash-gs-apariencia/1.0 (contenedor anterior)',
     },
     vertices: nv,
@@ -522,7 +547,7 @@ async function primeraApariencia(uos: UosLoader): Promise<Asset | null> {
   for (const a of uos.de('mesh_gs_scene')) {
     if (a.external || a.media_type === 'model/gltf-binary') continue;
     const d = await uos.sidecar<DescriptorGS>(a);
-    if (d?.profile === 'ash-gs-apariencia/1.0') return a;
+    if (d?.profile && ['ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'].includes(d.profile)) return a;
   }
   return null;
 }
