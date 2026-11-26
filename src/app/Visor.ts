@@ -82,10 +82,35 @@ export const TEMA_3D: Record<Tema, {
   readonly borde: number;
   readonly hueso: Composicion;
   readonly tonoHueso: [number, number, number];
+  /**
+   * Las raíces del CBCT. En oscuro EMITEN marfil; en claro ABSORBEN sobre todo el azul, que
+   * es lo que hace que un producto sobre beige salga ámbar y no gris. Falso color, como el
+   * del hueso: es densidad medida separada por un modelo, no esmalte ni dentina.
+   */
+  readonly tonoRaiz: [number, number, number];
 }> = {
-  oscuro: { centro: 0x16191d, borde: 0x040506, hueso: 'emision', tonoHueso: [0.62, 0.66, 0.70] },
-  claro: { centro: 0xf5f0e6, borde: 0xdcd4c3, hueso: 'absorcion', tonoHueso: [0.50, 0.50, 0.48] },
+  oscuro: { centro: 0x16191d, borde: 0x040506, hueso: 'emision', tonoHueso: [0.62, 0.66, 0.70],
+    tonoRaiz: [0.95, 0.88, 0.72] },
+  claro: { centro: 0xf5f0e6, borde: 0xdcd4c3, hueso: 'absorcion', tonoHueso: [0.50, 0.50, 0.48],
+    tonoRaiz: [0.30, 0.42, 0.70] },
 };
+
+/**
+ * Ganancia de display de las raíces. Más alta que la del hueso a propósito: son la misma
+ * densidad medida y tienen que leerse DENTRO del cristal, no fundirse con él.
+ */
+const GANANCIA_RAIZ = 0.14;
+
+/** Las raíces del CBCT: las gaussianas de CBCT del compuesto que su `derived_seg` numera. */
+export interface InfoRaices {
+  /** El compuesto de donde salen. */
+  readonly id: string;
+  /** El `derived_seg` que las separa del hueso. */
+  readonly de: string;
+  readonly modelo: string | null;
+  readonly n: number;
+  readonly piezas: readonly number[];
+}
 
 /**
  * Ganancia de display del hueso. Más baja que la del resto del campo a propósito: el
@@ -198,6 +223,10 @@ export interface ResultadoCapas {
   readonly escaner: InfoEscaner | null;
   /** Un compuesto con gaussianas del escáner que no se pintaron, y por qué. */
   readonly escanerFallido: { readonly id: string; readonly motivo: string } | null;
+  /** Las raíces del CBCT separadas por su `derived_seg`, o `null`. */
+  readonly raices: InfoRaices | null;
+  /** Si la encía va en escenas propias y por tanto se puede ocultar. */
+  readonly encia: boolean;
   /** El `derived_seg` cuyas etiquetas dan la selección y el odontograma, o `null`. */
   readonly etiquetas: string | null;
 }
@@ -228,6 +257,7 @@ export class Visor {
   private fotograma = 0;
   private tema: Tema = 'oscuro';
   private huesoId: string | null = null;
+  private raicesId: string | null = null;
   private liberado = false;
   /** Cada apertura incrementa esto; una carga vieja que despierte ve que ya no es la suya. */
   private generacion = 0;
@@ -275,6 +305,7 @@ export class Visor {
   async vacia(): Promise<void> {
     this.generacion++;
     this.huesoId = null;
+    this.raicesId = null;
     this.splats.limpia();
     await this.apariencia.limpia();
   }
@@ -493,6 +524,26 @@ export class Visor {
         compuestoDescartado.motivo);
     }
 
+    // ⚠️ **Las raíces: la densidad MEDIDA del CBCT, separada del hueso por un modelo.** Son
+    // las gaussianas de CBCT del compuesto (`source_modality = 0`) que su `derived_seg`
+    // numera como pieza. No se inventa nada: la densidad y la posición son las medidas; lo
+    // que es Capa 3 es el corte, y la interfaz lo dice.
+    let raices: InfoRaices | null = null;
+    if (compuesto?.etiquetas) {
+      try {
+        raices = this.pintaRaices(compuesto);
+      } catch (e) {
+        avisos.push(`${compuesto.id}: las raíces del CBCT no se pudieron separar: ` +
+          (e instanceof Error ? e.message : String(e)));
+      }
+    }
+
+    // ⚠️ **La encía, oculta de salida si se puede separar.** Es lo que deja ver los dientes
+    // solos dentro del cristal. El corte es la numeración (Capa 3): el código 0 es «sin
+    // asignar», que es la encía y todo lo que el modelo no asignó. La interfaz lo dice.
+    const encia = this.apariencia.separaEncia;
+    if (encia) this.apariencia.enciendeEncia(false);
+
     if (this.apariencia.sinAislar.length) avisos.push(
       `Las piezas ${[...this.apariencia.sinAislar].sort((a, b) => a - b).join(', ')} se dibujan ` +
       'con la encía y no se pueden aislar: no caben como escena propia en el rasterizador.');
@@ -501,7 +552,36 @@ export class Visor {
     // `.uos` sin apariencia no lo llega a instanciar.
     const gs = this.apariencia.grupo;
     if (gs && gs.parent !== this.escena.scene) this.escena.scene.add(gs);
-    return { avisos, region, apariencia, hueso, escaner, escanerFallido, etiquetas };
+    return { avisos, region, apariencia, hueso, escaner, escanerFallido, raices, encia,
+      etiquetas };
+  }
+
+  /** Pinta las raíces del CBCT como capa de densidad aparte. Ver `carga`. */
+  private pintaRaices(compuesto: Compuesto): InfoRaices | null {
+    const { campo, colocacion } = compuesto;
+    const modalidad = campo.columnas['source_modality'];
+    const region = campo.columnas['region_id'];
+    if (!modalidad || !region || !compuesto.etiquetas) return null;
+    const idx: number[] = [];
+    for (let i = 0; i < campo.n; i++) if (modalidad[i] === 0 && region[i]! > 0) idx.push(i);
+    if (idx.length === 0) return null;
+    const columnas: Record<string, Float32Array> = {};
+    for (const k of ['x', 'y', 'z', 'density', 'scale_0'] as const) {
+      const c = campo.columnas[k];
+      if (c) columnas[k] = Float32Array.from(idx, (i) => c[i]!);
+    }
+    const sub: CampoPly = { n: idx.length, columnas, comentarios: {} };
+    const id = `${compuesto.id}#raices`;
+    const t = TEMA_3D[this.tema];
+    this.splats.añade(id, 'raíces del CBCT', sub, t.tonoRaiz, {
+      matriz: colocacion.matriz, medida: true, ganancia: GANANCIA_RAIZ, composicion: t.hueso,
+      nota: 'densidad medida del CBCT; el corte lo hace un modelo (Capa 3)',
+    });
+    this.splats.enciende(id, true);
+    this.raicesId = id;
+    const piezas = [...new Set(idx.map((i) => region[i]!))].sort((a, b) => a - b);
+    return { id: compuesto.id, de: compuesto.etiquetas.id, modelo: compuesto.etiquetas.modelo,
+      n: idx.length, piezas };
   }
 
   /**
@@ -615,11 +695,22 @@ export class Visor {
     const t = TEMA_3D[tema];
     this.escena.ponFondo(t.centro, t.borde);
     if (this.huesoId) this.splats.ponComposicion(t.hueso, t.tonoHueso, this.huesoId);
+    if (this.raicesId) this.splats.ponComposicion(t.hueso, t.tonoRaiz, this.raicesId);
   }
 
   /** Enciende o apaga la capa de hueso. */
   enciendeHueso(si: boolean): void {
     if (this.huesoId) this.splats.enciende(this.huesoId, si);
+  }
+
+  /** Enciende o apaga las raíces del CBCT. */
+  enciendeRaices(si: boolean): void {
+    if (this.raicesId) this.splats.enciende(this.raicesId, si);
+  }
+
+  /** Enciende o apaga la encía (las escenas de código 0) del rasterizador. */
+  enciendeEncia(si: boolean): void {
+    this.apariencia.enciendeEncia(si);
   }
 
   /** Encuadra sobre la apariencia, o sobre la primera capa si no la hay. */

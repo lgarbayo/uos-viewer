@@ -81,6 +81,8 @@ export class Apariencia {
    * `DropInViewer` nuevo, con sus workers, colgado de una escena que ya no existe.
    */
   private cerrada = false;
+  /** Si las escenas de código 0 se dibujan. Ver `enciendeEncia`. */
+  private enciaVisible = true;
 
   /**
    * El grupo que hay que colgar de la escena, o `null` si aún no hay ninguna capa.
@@ -296,7 +298,26 @@ export class Apariencia {
     const v = this.visor.viewer;
     for (const e of this.escenas) {
       if (e.capa !== id || e.indice >= v.getSceneCount()) continue;
-      v.getSplatScene(e.indice).visible = visible;
+      // La encía oculta sigue oculta aunque se encienda su capa.
+      v.getSplatScene(e.indice).visible = visible && (e.fdi !== 0 || this.enciaVisible);
+    }
+  }
+
+  /**
+   * Si la encía va en escenas PROPIAS. Sólo entonces se puede ocultar sin llevarse los
+   * dientes: una capa sin `region_id` va entera en la escena 0.
+   */
+  get separaEncia(): boolean {
+    return this.escenas.some((e) => e.fdi === 0) && this.escenas.some((e) => e.fdi > 0);
+  }
+
+  /** Enciende o apaga las escenas de código 0 (la encía y lo no asignado). */
+  enciendeEncia(si: boolean): void {
+    this.enciaVisible = si;
+    if (!this.visor || !this.separaEncia) return;
+    const v = this.visor.viewer;
+    for (const e of this.escenas) {
+      if (e.fdi === 0 && e.indice < v.getSceneCount()) v.getSplatScene(e.indice).visible = si;
     }
   }
 
@@ -319,6 +340,7 @@ export class Apariencia {
     this.urls.length = 0;
     this.escenas.length = 0;
     this.fundidos.length = 0;
+    this.enciaVisible = true;
     this.resaltada = null;
     if (this.visor) {
       const v = this.visor;

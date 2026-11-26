@@ -14,7 +14,7 @@ import type { Manifiesto } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader, type Reparo } from '../uos/UosLoader';
 import { leeSegmentaciones, type Margen, type FronteraPieza, type Segmentacion } from './Segmentacion';
-import type { InfoApariencia, InfoEscaner, InfoHueso, Visor } from './Visor';
+import type { InfoApariencia, InfoEscaner, InfoHueso, InfoRaices, Visor } from './Visor';
 
 export interface VistaJSON {
   id: string;
@@ -60,6 +60,12 @@ export interface Caso {
   readonly escaner: InfoEscaner | null;
   /** Un compuesto con gaussianas del escáner que no se pintaron, y por qué. */
   readonly escanerFallido: { readonly id: string; readonly motivo: string } | null;
+  /** Las raíces del CBCT separadas por el `derived_seg` del compuesto, o `null`. */
+  readonly raices: InfoRaices | null;
+  /** Si la encía se puede ocultar (va en escenas propias). Sale oculta. */
+  readonly encia: boolean;
+  /** Piezas fundidas con la encía por el tope de escenas: se dibujan con ella. */
+  readonly sinAislar: readonly number[];
   /** El `derived_seg` que da la selección y el odontograma, o `null`. */
   readonly etiquetas: string | null;
   /** Lo que declara cada segmentación de `derived/`. Ver `Segmentacion.ts`. */
@@ -78,7 +84,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   // ⚠️ **Las capas GAUSSIANAS son lo único que se dibuja, y son EL MODELO.** El contenedor
   // lleva sólo el campo gaussiano y el manifiesto —el escaneo original viaja fuera,
   // nombrado por su sha256—, así que no hay malla que enseñar mientras.
-  const { avisos, region, apariencia, hueso, escaner, escanerFallido, etiquetas } =
+  const { avisos, region, apariencia, hueso, escaner, escanerFallido, raices, encia, etiquetas } =
     await visor.carga(uos);
 
   if (vistas[0]) visor.escena.aplicaVista(vistas[0].camera);
@@ -173,6 +179,9 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     hueso,
     escaner,
     escanerFallido,
+    raices,
+    encia,
+    sinAislar: [...visor.apariencia.sinAislar].sort((a, b) => a - b),
     etiquetas,
     segmentaciones,
     frontera: conFrontera?.frontera ? { id: conFrontera.id, piezas: conFrontera.frontera } : null,

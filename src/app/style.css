@@ -517,6 +517,9 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
 .muestra-capa.marfil { background: rgb(230 222 204); }
 .muestra-capa.ausente { background: transparent; border-style: dashed; }
 .muestra-capa.numeracion { background: var(--aviso); }
+/* Rosa apagado: es la etiqueta de una capa, no el color de la encía del paciente. */
+.muestra-capa.encia { background: rgb(196 128 118); }
+.muestra-capa.raiz { background: rgb(242 225 184); }
 
 /* --- inferencia (derived/) ------------------------------------------------ */
 .rejilla-seg { display: grid; gap: .45rem; margin-top: .4rem;

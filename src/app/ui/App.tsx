@@ -53,6 +53,9 @@ export function App() {
    * selección ni odontograma navegable, y lo que se ve es sólo lo medido.
    */
   const [numeracion, setNumeracion] = useState(true);
+  /** La encía sale oculta, y vuelve si se apaga la numeración: el corte es Capa 3. */
+  const [enciaVisible, setEnciaVisible] = useState(false);
+  const [raicesVisibles, setRaicesVisibles] = useState(true);
   /** Cada apertura se numera: la respuesta de una apertura vieja no pisa a la nueva. */
   const aperturas = useRef(0);
 
@@ -73,6 +76,8 @@ export function App() {
       // provisional. El estado de React parte de ahí para no contradecir al lienzo.
       setHuesoVisible(c.hueso !== null && !c.hueso.colocacion.provisional);
       setNumeracion(true);
+      setEnciaVisible(false);
+      setRaicesVisibles(c.raices !== null);
       setEstado({ fase: 'abierto', caso: c });
     } catch (err) {
       if (err instanceof VisorLiberado || n !== aperturas.current) return;
@@ -90,6 +95,12 @@ export function App() {
 
   // El fondo 3D sigue al tema. También al montar: un visor nuevo arranca con el de ahora.
   useEffect(() => { visor?.ponTema(tema); }, [visor, tema]);
+
+  // ⚠️ Ocultar la encía USA la numeración: sin ella no hay corte que enseñar, y lo que se
+  // ve vuelve a ser sólo lo medido, entero.
+  useEffect(() => {
+    if (caso?.encia) visor?.enciendeEncia(enciaVisible || !numeracion);
+  }, [visor, caso, enciaVisible, numeracion]);
 
   // Arrastrar un `.uos` a cualquier parte de la ventana.
   useEffect(() => {
@@ -215,6 +226,10 @@ export function App() {
           // no se enseña sería un estado que la interfaz no explica.
           if (!si) selecciona(null);
           setNumeracion(si);
+        }} enciaVisible={enciaVisible || !numeracion} alCambiarEncia={setEnciaVisible}
+        raicesVisibles={raicesVisibles} alCambiarRaices={(si) => {
+          visor?.enciendeRaices(si);
+          setRaicesVisibles(si);
         }} />
       )}
 

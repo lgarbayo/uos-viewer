@@ -18,6 +18,10 @@ interface Props {
   readonly alCambiarHueso: (si: boolean) => void;
   readonly numeracion: boolean;
   readonly alCambiarNumeracion: (si: boolean) => void;
+  readonly enciaVisible: boolean;
+  readonly alCambiarEncia: (si: boolean) => void;
+  readonly raicesVisibles: boolean;
+  readonly alCambiarRaices: (si: boolean) => void;
 }
 
 /** Milímetros con coma decimal y un número fijo de decimales, como el resto del panel. */
@@ -27,6 +31,7 @@ function mm(v: number, decimales: number): string {
 
 export function Procedencia({
   caso, huesoVisible, alCambiarHueso, numeracion, alCambiarNumeracion,
+  enciaVisible, alCambiarEncia, raicesVisibles, alCambiarRaices,
 }: Props) {
   const { apariencia, escaner, escanerFallido, hueso, segmentador, hayEtiquetas } = caso;
   if (!apariencia && !escaner && !hueso && !escanerFallido) return null;
@@ -36,6 +41,12 @@ export function Procedencia({
   const numeradoPorMalla = escaner?.numeracion.usada?.via === 'malla'
     ? escaner.numeracion.usada : null;
   const delCompuesto = escaner?.numeracion.delCompuesto ?? null;
+  /** La Capa de un `derived_seg` tal como la declara su sidecar. */
+  const capaDe = (id: string) => {
+    const capa = caso.segmentaciones.find((s) => s.id === id)?.capa;
+    return capa != null ? <span className="l3">Capa {capa}</span>
+      : <span className="sinver">Capa no declarada</span>;
+  };
   return (
     <aside id="procedencia" aria-label="Qué se ve y de dónde sale">
       <h3>Qué se ve</h3>
@@ -134,6 +145,45 @@ export function Procedencia({
                   escáner)</>}
               </div>
             )}
+          </li>
+        )}
+        {caso.encia && (
+          <li>
+            <label className="capa-conmutable">
+              <input type="checkbox" checked={enciaVisible} disabled={!numeracion}
+                onChange={(e) => alCambiarEncia(e.target.checked)} />
+              <span className="muestra-capa encia" aria-hidden="true" />
+              <span><b>Encía</b> · {enciaVisible ? 'visible' : 'oculta'}</span>
+            </label>
+            <div className="nota">
+              {numeracion
+                ? <>lo separa la numeración <code>{caso.etiquetas}</code> (
+                  {caso.etiquetas ? capaDe(caso.etiquetas) : 'Capa no declarada'}): el código 0
+                  es la encía y todo lo que el modelo no asignó</>
+                : 'sin numeración no hay corte: se ve todo lo medido'}
+              {caso.sinAislar.length > 0 && <> · las piezas {caso.sinAislar.join(', ')} van
+                con ella</>}
+            </div>
+          </li>
+        )}
+        {caso.raices && (
+          <li>
+            <label className="capa-conmutable">
+              <input type="checkbox" checked={raicesVisibles}
+                onChange={(e) => alCambiarRaices(e.target.checked)} />
+              <span className="muestra-capa raiz" aria-hidden="true" />
+              <span><b>Raíces</b> · CBCT de este paciente</span>
+            </label>
+            <div className="nota">
+              {caso.raices.n.toLocaleString('es')} gaussianas del CBCT de{' '}
+              <code>{caso.raices.id}</code> que <code>{caso.raices.de}</code> asigna a una pieza
+              ({caso.raices.modelo ?? 'modelo no declarado'} · {capaDe(caso.raices.de)}).
+              Densidad medida, en marfil de visualización
+            </div>
+            <div className="nota">
+              es el diente entero del CBCT, corona incluida: lo que asoma por encima de la encía
+              lo tapa el escáner
+            </div>
           </li>
         )}
         {hueso && reg && (
