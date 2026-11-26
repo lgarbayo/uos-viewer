@@ -204,6 +204,26 @@ una radiografía) y verse igual de convincente. Aquí las coronas son el escaneo
 este paciente, numeradas por un modelo (Capa 3), y el hueso y las raíces son su CBCT. El
 panel se construye con lo que de verdad se dibuja.
 
+## Lo que dice la segmentación, pieza a pieza
+
+Los paneles son los de agosto. Sólo se ha añadido lo que permite leer los cambios del
+segmentador desde entonces, y **todo sale del sidecar de cada `derived_seg`**: el visor no
+sabe qué modelo se usó, sólo lo que el contenedor afirma.
+
+- **Contenedor → Inferencia**: por cada segmentación se enseñan modelo, versión, pesos
+  (`sha256` abreviado), régimen (Capa e `investigational`), qué asset indexa, piezas
+  presentes, frontera por pieza y margen gingival. Lo que viene a `null` se enseña como
+  «no declarado» y no se rellena: un modelo congelado sólo aparece aquí cuando el emisor
+  escribe su versión y el hash de sus pesos.
+- **Ficha de la pieza**: el aviso de `per_tooth_boundary` (la regla de
+  `Derivados.avisoDeFrontera`, que ya tenía tests y había quedado sin usar desde que se
+  quitó la malla). Debajo, el margen gingival de esa pieza en uno de tres estados:
+  anclado al surco, sin surco claro o propuesto sin aplicar. Si falta `gingival_margin`,
+  significa «no se ejecutó» y no «no movió nada».
+- **Odontograma**: un `!` en las piezas cuyo recorte cae fuera del rango de experto.
+
+Los motivos de la puerta de revisión ya estaban en «Clínico» y no cambian.
+
 ## Tests
 
 Los tests corren contra `.uos` **de verdad**, porque lo único que no prueba un fixture

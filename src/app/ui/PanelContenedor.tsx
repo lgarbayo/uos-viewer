@@ -13,6 +13,7 @@ import { esProvisional } from '../../uos/Manifest';
 import type { UosLoader } from '../../uos/UosLoader';
 import type { Caso } from '../Caso';
 import { construye3mf, regenera, type Regenerado } from '../Regenera';
+import type { Segmentacion } from '../Segmentacion';
 import { baja } from './descargas';
 import { useTemporal } from './useTemporal';
 
@@ -44,6 +45,7 @@ export function PanelContenedor({ caso }: { caso: Caso }) {
           {uos.porPrioridad.map((a) => <FichaAsset key={a.id} uos={uos} asset={a} />)}
         </div></div>
       </div>
+      {caso.segmentaciones.length > 0 && <Inferencia segmentaciones={caso.segmentaciones} />}
       <div className="cols cols-3">
         <div className="bloque">
           <h3>Regeneración local · geometría y apariencia</h3>
@@ -253,5 +255,70 @@ function Resultado({ r }: { r: Regenerado }) {
           .meta.json</button>
       </p>
     </>
+  );
+}
+
+/**
+ * Lo que declaran las segmentaciones de `derived/`: modelo, versión, pesos, régimen, y qué
+ * hizo el margen gingival.
+ *
+ * ⚠️ **Lo que el sidecar trae a `null` se enseña como «no declarado», y no se rellena.** El
+ * visor no sabe qué modelo se usó; sabe lo que el contenedor afirma. Un hash de pesos que
+ * falta es información —no se puede reproducir la inferencia— y taparlo la perdería.
+ */
+function Inferencia({ segmentaciones }: { segmentaciones: readonly Segmentacion[] }) {
+  return (
+    <div className="bloque derived">
+      <h3>Inferencia · <span className="n">{segmentaciones.length}</span> segmentación(es) en{' '}
+        <code>derived/</code></h3>
+      <p className="nota">Salida de modelos: no es una medida ni un diagnóstico, y se puede
+        quitar del contenedor sin romperlo.</p>
+      <div className="rejilla-seg">
+        {segmentaciones.map((s) => <FichaSegmentacion key={s.id} s={s} />)}
+      </div>
+    </div>
+  );
+}
+
+const noDeclarado = <span className="sinver">no declarado</span>;
+
+function FichaSegmentacion({ s }: { s: Segmentacion }) {
+  const fuera = s.frontera
+    ? [...s.frontera].filter(([, t]) => !t.within_expert_range).map(([f]) => f).sort((a, b) => a - b)
+    : [];
+  const m = s.margen;
+  const anclas = m ? [...m.teeth].filter(([, t]) => !t.declined && t.moved > 0).map(([f]) => f) : [];
+  const declinadas = m ? [...m.teeth].filter(([, t]) => t.declined).map(([f]) => f).sort((a, b) => a - b) : [];
+  return (
+    <div className="asset seg">
+      <div className="id" title={s.id}><b>{s.id}</b></div>
+      <div className="uri">{s.uri}</div>
+      <dl>
+        <dt>modelo</dt><dd>{s.modelo ?? noDeclarado}</dd>
+        <dt>versión</dt><dd>{s.version ?? noDeclarado}</dd>
+        <dt>pesos</dt><dd>{s.pesos
+          ? <code title={s.pesos}>sha256:{s.pesos.slice(0, 12)}…</code> : noDeclarado}</dd>
+        <dt>régimen</dt><dd>
+          {s.capa !== null ? <span className="l3">Capa {s.capa}</span> : noDeclarado}
+          {s.estado && <> · {s.estado}</>}
+          {s.jurisdicciones.length > 0 && <> · {s.jurisdicciones.join(', ')}</>}
+        </dd>
+        <dt>indexa</dt><dd>{s.fuentes.join(', ') || noDeclarado}
+          {s.etiquetadas !== null && s.total !== null
+            && <span className="b"> · {s.etiquetadas.toLocaleString('es')} de {s.total.toLocaleString('es')} con pieza</span>}</dd>
+        <dt>piezas</dt><dd>{s.piezas.length ? s.piezas.join(' ') : <span className="b">ninguna</span>}</dd>
+        {s.generado && <><dt>generada</dt><dd>{s.generado.slice(0, 10)}</dd></>}
+        {s.frontera && <><dt>frontera</dt><dd>{fuera.length
+          ? <span className="sinver">fuera del rango de experto: {fuera.join(', ')}</span>
+          : 'todas dentro del rango de experto'}</dd></>}
+        <dt>margen</dt><dd>{m
+          ? <>{m.applied ? 'aplicado' : <span className="sinver">propuesto, no aplicado</span>}
+              {m.criterion && <> · criterio {m.criterion}</>}
+              {' · '}{anclas.length} pieza(s) ancladas al surco
+              {declinadas.length > 0 && <> · sin surco claro: {declinadas.join(', ')}</>}
+              <div className="b">{m.method}{Object.entries(m.thresholds).map(([k, v]) => ` · ${k} ≥ ${v}`).join('')}</div></>
+          : <span className="b">no se ejecutó</span>}</dd>
+      </dl>
+    </div>
   );
 }

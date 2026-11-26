@@ -217,11 +217,12 @@ export function App() {
 
       {caso && (
         <Ficha hayEtiquetas={caso.hayEtiquetas} seleccion={seleccion} piezas={caso.piezas}
-          segmentador={caso.segmentador} alCerrar={() => selecciona(null)} />
+          segmentador={caso.segmentador} frontera={caso.frontera} margen={caso.margen}
+          alCerrar={() => selecciona(null)} />
       )}
 
       {caso && (
-        <Odontograma segmentadas={caso.segmentadas} piezas={caso.piezas}
+        <Odontograma segmentadas={caso.segmentadas} piezas={caso.piezas} frontera={caso.frontera}
           seleccionada={seleccion.tipo === 'pieza' ? seleccion.fdi : null}
           alPulsar={(fdi) => {
             // Volver a pulsar la misma casilla devuelve la arcada entera.
