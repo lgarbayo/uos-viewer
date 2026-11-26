@@ -68,7 +68,7 @@ const TEXTOS: Record<Idioma, typeof es> = {
     fuera: (n) => ` · ${n} external`,
     clinico: 'Clinical',
     tituloClinico: (schema) => `Clinical · ${schema}`,
-    piezas: (n) => `${n} teeth`,
+    piezas: (n) => `${n} ${n === 1 ? 'tooth' : 'teeth'}`,
     revision: (n) => ` · ${n} for review`,
   },
 };

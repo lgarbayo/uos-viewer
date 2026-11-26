@@ -14,6 +14,7 @@
  */
 
 import type { UosLoader } from '../uos/UosLoader';
+import type { Idioma } from './ui/idioma';
 
 export interface FronteraPieza {
   readonly mesiodistal_mm: number;
@@ -149,15 +150,33 @@ export async function leeSegmentaciones(uos: UosLoader): Promise<Segmentacion[]>
  * frontera se queda como la dio el modelo) y propuesto sin aplicar. Un «sin cambios» que no
  * distinguiera «no se intentó» de «se intentó y no había surco» perdería justo lo que el
  * revisor necesita saber.
+ *
+ * La frase sale en el idioma de la interfaz; el motivo (`reason`) es del emisor y va tal cual.
  */
-export function margenDePieza(m: Margen | null, fdi: number): string | null {
+export function margenDePieza(m: Margen | null, fdi: number, idioma: Idioma = 'es'): string | null {
   const t = m?.teeth.get(fdi);
   if (!m || !t) return null;
-  if (t.declined) {
-    return `margen gingival: sin surco claro, frontera sin corregir${t.reason ? ` (${t.reason})` : ''}`;
-  }
+  const x = TEXTOS_MARGEN[idioma];
+  if (t.declined) return x.declinado(t.reason ? ` (${t.reason})` : '');
   const pct = t.moved_fraction !== null ? ` (${(t.moved_fraction * 100).toFixed(0)} %)` : '';
-  return m.applied
-    ? `margen gingival: anclado al surco cervical · ${t.moved.toLocaleString('es')} vértices cedidos a la encía${pct}`
-    : `margen gingival: propuesto, NO aplicado · movería ${t.moved.toLocaleString('es')} vértices${pct}`;
+  // `toLocaleString(idioma)` y no `numero` de `ui/idioma`: este módulo no depende de React.
+  const n = t.moved.toLocaleString(idioma);
+  return m.applied ? x.anclado(n, pct) : x.propuesto(n, pct);
 }
+
+const TEXTOS_MARGEN: Record<Idioma, {
+  declinado: (motivo: string) => string;
+  anclado: (n: string, pct: string) => string;
+  propuesto: (n: string, pct: string) => string;
+}> = {
+  es: {
+    declinado: (motivo) => `margen gingival: sin surco claro, frontera sin corregir${motivo}`,
+    anclado: (n, pct) => `margen gingival: anclado al surco cervical · ${n} vértices cedidos a la encía${pct}`,
+    propuesto: (n, pct) => `margen gingival: propuesto, NO aplicado · movería ${n} vértices${pct}`,
+  },
+  en: {
+    declinado: (motivo) => `gingival margin: no clear sulcus, boundary left uncorrected${motivo}`,
+    anclado: (n, pct) => `gingival margin: anchored to the cervical sulcus · ${n} vertices reassigned to the gingiva${pct}`,
+    propuesto: (n, pct) => `gingival margin: proposed, NOT applied · would move ${n} vertices${pct}`,
+  },
+};

@@ -53,4 +53,26 @@ describe('lo que declara una segmentación de derived/', () => {
       ...completo, gingival_margin: { ...completo.gingival_margin, applied: false } });
     expect(margenDePieza(propuesto.margen, 13)).toMatch(/propuesto, NO aplicado/);
   });
+
+  it('el español es el idioma por omisión y sale igual que antes', () => {
+    const s = interpretaSegmentacion('a', 'x', completo);
+    expect(margenDePieza(s.margen, 13, 'es')).toBe(margenDePieza(s.margen, 13));
+    expect(margenDePieza(s.margen, 13)).toBe(
+      'margen gingival: anclado al surco cervical · 1308 vértices cedidos a la encía (33 %)');
+    expect(margenDePieza(s.margen, 11)).toBe(
+      'margen gingival: sin surco claro, frontera sin corregir (weak_crease)');
+  });
+
+  it('dice lo mismo en inglés, con el motivo del emisor tal cual', () => {
+    const s = interpretaSegmentacion('a', 'x', completo);
+    expect(margenDePieza(s.margen, 13, 'en')).toBe(
+      'gingival margin: anchored to the cervical sulcus · 1,308 vertices reassigned to the gingiva (33 %)');
+    expect(margenDePieza(s.margen, 11, 'en')).toBe(
+      'gingival margin: no clear sulcus, boundary left uncorrected (weak_crease)');
+    expect(margenDePieza(s.margen, 22, 'en')).toBeNull();
+    const propuesto = interpretaSegmentacion('a', 'x', {
+      ...completo, gingival_margin: { ...completo.gingival_margin, applied: false } });
+    expect(margenDePieza(propuesto.margen, 13, 'en')).toBe(
+      'gingival margin: proposed, NOT applied · would move 1,308 vertices (33 %)');
+  });
 });
