@@ -13,6 +13,25 @@ npm run dev          # arrastra un .uos a la ventana
 npm test             # los tests del lector (ver más abajo)
 ```
 
+## La interfaz es React; el render no
+
+React (19, en `src/app/ui/`) pinta **sólo** la interfaz: barra, esquinas, modales,
+odontograma y ficha. El render sigue siendo three imperativo —`Escena`, `Splats`,
+`Apariencia`, `Regenera`— detrás de una sola costura, `src/app/Visor.ts`, que React crea en
+un efecto y libera en su limpieza. No hay react-three-fiber, y `src/uos/` no sabe que React
+existe.
+
+- **El lienzo lo crea el `Visor`, no JSX.** Cada montaje trae un `<canvas>` nuevo: un lienzo
+  cuyo contexto se perdió devuelve ese mismo contexto perdido a `getContext`.
+- **`Visor.dispose` lo suelta todo**: bucle, `DropInViewer` y sus workers de ordenación,
+  geometría, destino del picking, controles, `resize` y el contexto (`forceContextLoss`).
+  Cerrar el modal del contenedor termina el worker de regeneración si sigue calculando.
+- **`StrictMode` se queda puesto** porque su doble montaje es la prueba. En desarrollo,
+  `__uosDiagnostico()` en la consola cuenta contextos WebGL y workers vivos. Medido con un
+  caso real: al arrancar, 2 contextos creados, 1 perdido, **1 vivo**; un segundo `Visor`
+  con el contenedor cargado sube a 2 contextos y 2 workers, y tras su `dispose` vuelve a
+  **1 y 1**. El contador no entra en el build de producción.
+
 ## Qué lo separa de un visor cualquiera
 
 **No recibe una lista de ficheros: recibe un contenedor y lo interroga.**

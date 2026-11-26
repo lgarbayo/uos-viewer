@@ -1,3 +1,4 @@
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 /**
@@ -14,10 +15,14 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
   base: './',
+  // React pinta SOLO la interfaz. El render sigue siendo three imperativo (ver `Visor.ts`).
+  plugins: [react()],
   build: {
     target: 'es2022',
     // three.js pesa y cambia poco; se separa para que el navegador lo cachee aparte del
     // codigo propio, que cambia en cada commit.
-    rollupOptions: { output: { manualChunks: { three: ['three'] } } },
+    rollupOptions: {
+      output: { manualChunks: { three: ['three'], react: ['react', 'react-dom', 'react-dom/client'] } },
+    },
   },
 });
