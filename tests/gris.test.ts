@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BRILLO_GRIS, injertaGris, topeEscenas, UNIFORM_GRIS } from '../src/app/Gris';
+import { injertaGris, topeEscenas, UNIFORM_BRILLO, UNIFORM_GRIS } from '../src/app/Gris';
 
 /** Lo esencial del shader de vértices de la biblioteca con `enableOptionalEffects`. */
 const SHADER = `
@@ -26,7 +26,9 @@ describe('injertaGris', () => {
     const gris = s.indexOf(`${UNIFORM_GRIS}[sceneIndex]`);
     expect(opacidad).toBeGreaterThan(0);
     expect(gris).toBeGreaterThan(opacidad);
-    expect(s).toContain(BRILLO_GRIS.toFixed(3));
+    // El brillo es un uniform y no un literal: lo cambia el tema sin recompilar.
+    expect(s).toContain(`uniform float ${UNIFORM_BRILLO};`);
+    expect(s).toContain(`luz * ${UNIFORM_BRILLO}`);
   });
 
   it('no injerta dos veces', () => {

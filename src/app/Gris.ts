@@ -18,11 +18,13 @@
  */
 
 /**
- * Brillo del gris respecto a la luminancia original. Por debajo de 1 para que la pieza
- * pulsada, que conserva su color, sea también la más clara: un diente es casi blanco, y un
- * gris de su misma luminancia apenas se separa de él.
+ * Brillo del gris respecto a la luminancia original, por defecto. El que se usa lo pone
+ * cada tema (`TEMA_3D.brilloGris` en `Visor.ts`) a través del uniform `UNIFORM_BRILLO`.
  */
 export const BRILLO_GRIS = 0.55;
+
+/** Nombre del uniform con el brillo del gris: uno para todas las escenas. */
+export const UNIFORM_BRILLO = 'grisBrillo';
 
 /** La declaración de la que se cuelga el uniform nuevo, con el tope de escenas. */
 const ANCLA_UNIFORM = /uniform float sceneOpacity\[(\d+)\];/;
@@ -45,16 +47,16 @@ export function injertaGris(shader: string): string | null {
   const m = ANCLA_UNIFORM.exec(shader);
   if (!m || shader.split(ANCLA_COLOR).length !== 2) return null;
   if (shader.includes(UNIFORM_GRIS)) return shader;
-  const brillo = BRILLO_GRIS.toFixed(3);
   return shader
-    .replace(ANCLA_UNIFORM, `${m[0]}\n            uniform float ${UNIFORM_GRIS}[${m[1]}];`)
+    .replace(ANCLA_UNIFORM, `${m[0]}\n            uniform float ${UNIFORM_GRIS}[${m[1]}];` +
+      `\n            uniform float ${UNIFORM_BRILLO};`)
     .replace(
       ANCLA_COLOR,
       `${ANCLA_COLOR}
                 float grisDeEscena = ${UNIFORM_GRIS}[sceneIndex];
                 if (grisDeEscena > 0.0) {
                     float luz = dot(vColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-                    vColor.rgb = mix(vColor.rgb, vec3(luz * ${brillo}), grisDeEscena);
+                    vColor.rgb = mix(vColor.rgb, vec3(luz * ${UNIFORM_BRILLO}), grisDeEscena);
                 }`,
     );
 }
