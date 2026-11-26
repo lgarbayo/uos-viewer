@@ -180,9 +180,29 @@ gaussiano del CBCT. No hay mallas sólidas.
   (`Escena.ponFondo`). Es la «luz suave», y no ilumina nada: los splats no se sombrean, y
   el relieve sigue siendo el n·v del armónico de grado 1 que escribe el emisor. Por eso lo
   único que se puede suavizar sin tocar el color del paciente es el fondo.
-- **Coronas**: **el color real de la apariencia 3DGS** (`f_dc`, albedo), que es lo que el
-  contenedor trae. El tema no lo toca. El falso color por FDI (`Derivados.colorDe`) no se
-  usa para pintar.
+- **Coronas**, por orden de preferencia, para cualquier contenedor:
+  1. **Con apariencia 3DGS** (`KHR_gaussian_splatting` en `scene.glb` o
+     `derived/appearance.glb`): su **color real** (`f_dc`, albedo). El tema no lo toca. El
+     falso color por FDI (`Derivados.colorDe`) no se usa para pintar.
+  2. **Sin apariencia pero con compuesto CBCT + escáner** (`scene/composite.ply`, perfil
+     `histora-twin/1.0`, el mismo camino del §11.2 que el campo del CBCT): sus gaussianas
+     con `source_modality = 1`, en `Escaner.ts`. Posición, escala y rotación son **forma
+     medida** del escáner y se colocan con la registración declarada. El color es **marfil
+     neutro de visualización** y la opacidad también es de visualización. `density` **no**
+     se lee como opacidad: en el escáner vale 0, porque el escáner no mide atenuación. Se
+     dibujan con el mismo rasterizador que la apariencia, porque son elipses opacas de
+     superficie. Dos ajustes de display, y el panel los nombra:
+     - Cada gaussiana se dibuja al menos al 90 % del espaciado **medido** de la nube. En
+       agosto, σ = 0,066 mm frente a 0,133 mm entre vecinas: sin el ajuste, las caras
+       frontales salían moteadas.
+     - El relieve sale de las normales que declara la malla de `scene.glb`, y solo si sus
+       vértices caen uno a uno sobre esas gaussianas (≤ 0,001 mm). La malla no se dibuja.
+  3. **Sin ninguna de las dos**: solo se ve el CBCT.
+
+  En cada caso «Qué se ve» dice qué falta. La numeración FDI es una capa **aparte**, que se
+  puede apagar y lleva su Capa y su régimen tal como los declara su sidecar. Se ofrece solo
+  si alguna gaussiana dibujada tiene pieza. Si el `derived_seg` del compuesto numera el CBCT
+  y deja el escáner a 0, el panel lo dice en vez de ofrecer un odontograma vacío.
 - **Hueso y raíces**: el campo **medido** del CBCT (perfil de gemelo, sin la columna
   `source_modality` del compuesto), en gris translúcido. Es tejido duro por encima del
   umbral del emisor, **no una segmentación de hueso**, y el panel lo dice. Se coloca con

@@ -660,7 +660,9 @@ export class Splats {
 
   /** Si alguna capa trae el codigo FDI por gaussiana. Sin esto no hay seleccion posible. */
   get hayFdi(): boolean {
-    return this.capas.some((c) => c.conFdi);
+    // ⚠️ Traer la COLUMNA no basta: una columna toda a 0 («sin asignar») no deja aislar
+    // nada, y ofrecer la selección con ella sería prometer un odontograma vacío.
+    return this.capas.some((c) => c.conFdi && c.conPieza > 0);
   }
 
   /**

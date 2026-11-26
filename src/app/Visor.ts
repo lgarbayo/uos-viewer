@@ -16,10 +16,13 @@
 import type { UosLoader } from '../uos/UosLoader';
 import { leeEtiquetas } from '../uos/Etiquetas';
 import { leeGlb } from '../uos/Glb';
-import { leePly } from '../uos/Ply';
+import { leePly, type CampoPly } from '../uos/Ply';
 import { campoDesdeSplats, plyDesdeCampo } from '../uos/SplatsKhr';
 import { Apariencia, UMBRAL_ALFA_255 } from './Apariencia';
 import { Escena } from './Escena';
+import {
+  campoDelEscaner, cuentaConPieza, indicesDelEscaner, leeNormalesGlb, motivoSinNormales, posicionesEnCanonico,
+} from './Escaner';
 import { colocaEnCanonico, type Colocacion } from './Marcos';
 import { Splats, type Composicion } from './Splats';
 
@@ -122,12 +125,51 @@ function esCampoDeHueso(d: DescriptorGS): boolean {
     && !d.columns?.some((c) => c.name === 'source_modality');
 }
 
+/**
+ * Las coronas pintadas desde las gaussianas de ESCÁNER del compuesto, cuando el contenedor
+ * no trae apariencia. Ver `Escaner.ts`.
+ */
+export interface InfoEscaner {
+  /** El compuesto de donde salen. */
+  readonly id: string;
+  readonly n: number;
+  readonly colocacion: Colocacion;
+  /** De dónde sale el relieve, o por qué no lo hay. */
+  readonly relieve: { readonly de: string } | { readonly sinRelieve: string };
+  /** Ganancia de display del tamaño: cuántas se dibujan más grandes y desde qué σ. */
+  readonly espaciado: number;
+  readonly infladas: number;
+  readonly sigmaMinima: number;
+  /**
+   * La numeración del compuesto, contada sobre lo que dice su `derived_seg`: cuántas
+   * gaussianas del ESCÁNER tienen pieza y cuántas del resto (el CBCT). `null` si el
+   * compuesto no trae numeración.
+   */
+  readonly numeracion: {
+    readonly id: string;
+    readonly escaner: number;
+    readonly resto: number;
+  } | null;
+}
+
+/** El compuesto CBCT + escáner, guardado durante la carga por si hace falta para las coronas. */
+interface Compuesto {
+  readonly id: string;
+  readonly campo: CampoPly;
+  readonly colocacion: Colocacion;
+  /** El `derived_seg` que lo numera, si alguno. */
+  readonly etiquetas: { readonly id: string; readonly modelo: string | null } | null;
+}
+
 /** Lo que una carga deja dicho para la interfaz. */
 export interface ResultadoCapas {
   readonly avisos: string[];
   readonly region: ColumnaGS | null;
   readonly apariencia: InfoApariencia | null;
   readonly hueso: InfoHueso | null;
+  readonly escaner: InfoEscaner | null;
+  /** El `derived_seg` cuyas etiquetas dan la selección y el odontograma, o `null`. */
+  readonly etiquetas: string | null;
 }
 
 /** Se lanza cuando el visor se desmontó con una carga en vuelo. No es un fallo del `.uos`. */
@@ -230,6 +272,10 @@ export class Visor {
     let region: ColumnaGS | null = null;
     let apariencia: InfoApariencia | null = null;
     let hueso: InfoHueso | null = null;
+    let escaner: InfoEscaner | null = null;
+    let etiquetas: string | null = null;
+    /** El compuesto CBCT + escáner, por si hace falta para las coronas. */
+    let compuesto: Compuesto | null = null;
 
     let deGlb = false;
     for (const escena of uos.de('mesh_gs_scene').filter(
@@ -253,6 +299,7 @@ export class Visor {
             region = { name: 'region_id', measured: false,
               derived_from: inferred.meta.model?.name ?? inferred.asset.id,
               vocabulary: inferred.meta.encoding?.vocabulary ?? null };
+            etiquetas = inferred.asset.id;
             avisos.push('Selección dental basada en segmentación inferida; las fronteras requieren revisión.');
           } else if (!malla.splats.regionId) avisos.push(
             `${escena.id}: apariencia sin etiquetas FDI; no permite aislar piezas.`);
@@ -305,6 +352,7 @@ export class Visor {
           if (deGlb) continue;
           apariencia ??= { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
             nota: d.note ?? '' };
+          if (inferred) etiquetas ??= inferred.asset.id;
           await this.apariencia.añade(a.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
           this.sigueSiendo(gen);
           this.splats.añadeApariencia(a.id, d.role ?? a.id, campo, {
@@ -326,6 +374,10 @@ export class Visor {
               'ninguna registración declarada. No se dibuja: colocarlo a ojo sería inventar ' +
               'un alineamiento.');
             continue;
+          }
+          if (compuesto === null && d.columns?.some((c) => c.name === 'source_modality')) {
+            compuesto = { id: a.id, campo, colocacion, etiquetas: inferred
+              ? { id: inferred.asset.id, modelo: inferred.meta.model?.name ?? null } : null };
           }
           const esHueso = hueso === null && esCampoDeHueso(d);
           const tema = TEMA_3D[this.tema];
@@ -354,11 +406,89 @@ export class Visor {
       }
     }
 
+    // ⚠️ **Las coronas, por orden de preferencia.** Con apariencia, ya se pintaron con su
+    // color real. Sin apariencia pero con compuesto, se pintan sus gaussianas de ESCÁNER:
+    // forma medida, color de visualización. Sin ninguna de las dos, sólo queda el CBCT, y
+    // la interfaz lo dice.
+    if (apariencia === null && compuesto !== null) {
+      try {
+        escaner = await this.pintaEscaner(uos, compuesto, gen);
+        // ⚠️ Se cuenta, no se supone: un `derived_seg` del compuesto puede numerar sólo
+        // sus gaussianas de CBCT y dejar todas las del escáner a 0. Entonces no hay qué
+        // seleccionar en las coronas, y la interfaz lo dice en vez de ofrecerlo.
+        if (compuesto.etiquetas && escaner.numeracion?.escaner) {
+          etiquetas = compuesto.etiquetas.id;
+          region = { name: 'region_id', measured: false,
+            derived_from: compuesto.etiquetas.modelo ?? compuesto.etiquetas.id,
+            vocabulary: 'ISO-3950 (FDI)' };
+          avisos.push('Selección dental basada en segmentación inferida; las fronteras requieren revisión.');
+        } else if (escaner.numeracion) {
+          avisos.push(`${escaner.numeracion.id}: no numera ninguna gaussiana del escáner del ` +
+            `compuesto (sí ${escaner.numeracion.resto.toLocaleString('es')} del CBCT); ` +
+            'las coronas no se pueden aislar.');
+        }
+      } catch (e) {
+        if (e instanceof VisorLiberado) throw e;
+        avisos.push(`${compuesto.id}: las gaussianas del escáner no se pudieron pintar: ` +
+          (e instanceof Error ? e.message : String(e)));
+      }
+    }
+
     // El grupo del rasterizador se cuelga DESPUÉS de cargar: se crea perezosamente y un
     // `.uos` sin apariencia no lo llega a instanciar.
     const gs = this.apariencia.grupo;
     if (gs && gs.parent !== this.escena.scene) this.escena.scene.add(gs);
-    return { avisos, region, apariencia, hueso };
+    return { avisos, region, apariencia, hueso, escaner, etiquetas };
+  }
+
+  /**
+   * Pinta las gaussianas de escáner del compuesto con el MISMO rasterizador que la
+   * apariencia: son splats elípticos con escala y rotación, y el escáner es superficie
+   * opaca, que es lo que ese rasterizador compone bien. La geometría para la selección va
+   * a `Splats`, invisible, igual que con la apariencia.
+   */
+  private async pintaEscaner(
+    uos: UosLoader,
+    compuesto: Compuesto,
+    gen: number,
+  ): Promise<InfoEscaner> {
+    const { id, campo, colocacion } = compuesto;
+    const idx = indicesDelEscaner(campo);
+    if (idx.length === 0) throw new Error('el compuesto no trae gaussianas con `source_modality = 1`');
+
+    // El relieve sale de las normales que DECLARA la malla del escáner, y sólo si sus
+    // vértices son estas mismas gaussianas. La malla no se dibuja.
+    let normales: Float32Array | null = null;
+    let relieve: InfoEscaner['relieve'] = { sinRelieve: 'el contenedor no trae la malla del escáner' };
+    const canonico = uos.manifiesto.canonical_frame.id;
+    const malla = uos.de('mesh_gs_scene').find((a) => !a.external
+      && a.media_type === 'model/gltf-binary' && a.frame === canonico);
+    if (malla) {
+      const bytes = await uos.bytes(malla);
+      this.sigueSiendo(gen);
+      const pos = posicionesEnCanonico(campo, idx, colocacion.matriz);
+      const leidas = leeNormalesGlb(bytes);
+      const motivo = motivoSinNormales(pos, leeGlb(bytes).posiciones, leidas);
+      if (motivo) relieve = { sinRelieve: motivo };
+      else { normales = leidas; relieve = { de: malla.id }; }
+    }
+
+    const { campo: escaner, espaciado, infladas, sigmaMinima } =
+      campoDelEscaner(campo, idx, colocacion.matriz, normales);
+    const capa = `${id}#escaner`;
+    await this.apariencia.añade(capa, plyDesdeCampo(escaner), UMBRAL_ALFA_255);
+    this.sigueSiendo(gen);
+    this.splats.añadeApariencia(capa, 'escáner del compuesto', escaner, {
+      medida: true, nota: 'forma medida del escáner; color de visualización', soloSeleccion: true,
+    });
+    const region = campo.columnas['region_id'];
+    let numeracion: InfoEscaner['numeracion'] = null;
+    if (compuesto.etiquetas && region) {
+      const deEscaner = cuentaConPieza(region, idx);
+      numeracion = { id: compuesto.etiquetas.id, escaner: deEscaner,
+        resto: cuentaConPieza(region) - deEscaner };
+    }
+    return { id, n: idx.length, colocacion, relieve, espaciado, infladas, sigmaMinima, numeracion };
   }
 
   /** El tema de la interfaz llega también a la escena: el fondo 3D cambia con él. */

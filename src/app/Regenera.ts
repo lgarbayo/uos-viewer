@@ -437,7 +437,7 @@ export async function regenera(
   // pinta la arcada entera; lo que dice si un color es del paciente es la capa clínica.
   const conColor = await piezasConColor(uos);
 
-  avisa(`mezclando ${(malla.posiciones.length / 3).toLocaleString()} vértices…`);
+  avisa(`mezclando ${(malla.posiciones.length / 3).toLocaleString('es')} vértices…`);
   const peticion: Peticion = {
     posiciones: malla.posiciones, indices, fdiVertice, colorFloat32: splatsColor !== null,
     centros, fdc, opacidad: splatsColor?.opacidad ?? col['opacity']!, sigma, conColor,
