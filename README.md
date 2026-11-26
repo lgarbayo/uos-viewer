@@ -200,9 +200,18 @@ gaussiano del CBCT. No hay mallas sólidas.
   3. **Sin ninguna de las dos**: solo se ve el CBCT.
 
   En cada caso «Qué se ve» dice qué falta. La numeración FDI es una capa **aparte**, que se
-  puede apagar y lleva su Capa y su régimen tal como los declara su sidecar. Se ofrece solo
-  si alguna gaussiana dibujada tiene pieza. Si el `derived_seg` del compuesto numera el CBCT
-  y deja el escáner a 0, el panel lo dice en vez de ofrecer un odontograma vacío.
+  puede apagar y lleva su Capa, su régimen y el hash de sus pesos tal como los declara su
+  sidecar. Se ofrece solo si alguna gaussiana dibujada tiene pieza. Para las coronas del
+  escáner sale, por orden:
+  1. Del `derived_seg` del **compuesto**, si numera alguna gaussiana del escáner. Se
+     cuenta por `source_modality`, no se supone.
+  2. Si no, del `derived_seg` de la **malla del escáner**. Se une a las gaussianas solo con
+     la correspondencia uno a uno medida (≤ 0,001 mm en el canónico). `leeEtiquetas`
+     comprueba además el marco, los hashes y el `source_positions_sha256` del sidecar.
+
+  El visor no infiere ninguna etiqueta: une un código que el contenedor ya trae y dice de
+  dónde sale. En el caso de agosto, el del compuesto numera 236.261 gaussianas del CBCT y
+  ninguna del escáner, así que la numeración sale de `seg_teeth` y el panel lo dice.
 - **Hueso y raíces**: el campo **medido** del CBCT (perfil de gemelo, sin la columna
   `source_modality` del compuesto), en gris translúcido. Es tejido duro por encima del
   umbral del emisor, **no una segmentación de hueso**, y el panel lo dice. Se coloca con
