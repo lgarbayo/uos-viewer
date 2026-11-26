@@ -18,9 +18,13 @@
 
 import {
   Box3,
+  Color,
+  Mesh,
   OrthographicCamera,
+  PlaneGeometry,
   PerspectiveCamera,
   Scene,
+  ShaderMaterial,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -29,6 +33,48 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 /** El del spec (§7) y el de la distancia que declaran las vistas. */
 export const FOV_GRADOS = 35;
+
+/**
+ * El fondo: un degradado radial a pantalla completa, más claro arriba y en el centro.
+ *
+ * ⚠️ **Es la «luz suave», y no ilumina nada.** Los splats no se sombrean —llevan su color y
+ * su opacidad, y el relieve lo pone el armónico de grado 1 que escribe el emisor—, así que
+ * lo único que se puede suavizar sin tocar el color del paciente es lo que hay DETRÁS. Un
+ * negro plano recorta la arcada como una pegatina; un fondo que cae suavemente hacia los
+ * bordes la deja leerse como un objeto en un espacio.
+ *
+ * Se dibuja en espacio de recorte, sin cámara, primero y sin profundidad. Los colores van
+ * en sRGB tal cual: el `ShaderMaterial` no convierte, así que el hex del tema es el hex
+ * que sale en pantalla. El ruido de ±½ nivel rompe las bandas de un degradado de 8 bits.
+ */
+const FONDO_VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+const FONDO_FRAG = /* glsl */ `
+  precision mediump float;
+  varying vec2 vUv;
+  uniform vec3 centro;
+  uniform vec3 borde;
+  uniform float aspecto;
+  // ⚠️ La coordenada se ACOTA antes del hash. En mediump el producto escalar con el
+  // píxel de arriba de una pantalla pasa de 65.504, sale infinito, sin(inf) da NaN y el
+  // píxel se pinta negro: una diagonal negra que cruzaba media pantalla.
+  float ruido(vec2 p) {
+    p = mod(p, 256.0);
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  }
+  void main() {
+    vec2 d = (vUv - vec2(0.5, 0.58)) * vec2(aspecto, 1.0);
+    float t = smoothstep(0.0, 0.95, length(d));
+    vec3 c = mix(centro, borde, t);
+    c += (ruido(gl_FragCoord.xy) - 0.5) / 255.0;
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
 
 export class Escena {
   readonly scene = new Scene();
@@ -56,6 +102,7 @@ export class Escena {
    * con el modo estricto), y cada escena muerta seguía redimensionando un renderer liberado.
    */
   private readonly alRedimensionar = (): void => this.redimensiona();
+  private readonly fondo: Mesh<PlaneGeometry, ShaderMaterial>;
 
   /** La cámara que se está usando. Cambia con `ponOrtografica`. */
   get camera(): PerspectiveCamera | OrthographicCamera {
@@ -87,6 +134,20 @@ export class Escena {
     // alrededor del eje del mundo, y en una arcada cuyo eje oclusal no coincida con el, la
     // camara no da la vuelta: la vuelca.
     this.controles = this.creaControles();
+    this.fondo = new Mesh(new PlaneGeometry(2, 2), new ShaderMaterial({
+      uniforms: {
+        centro: { value: new Color(0x15181c) },
+        borde: { value: new Color(0x030405) },
+        aspecto: { value: 1 },
+      },
+      vertexShader: FONDO_VERT,
+      fragmentShader: FONDO_FRAG,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    this.fondo.frustumCulled = false;
+    this.fondo.renderOrder = -1000;
+    this.scene.add(this.fondo);
     // Sin esto el zoom depende de a que distancia estuviera la camara, y en una arcada de
     // 90 mm mirada desde 95 cada rueda salta demasiado.
 
@@ -108,6 +169,8 @@ export class Escena {
    */
   dispose(): void {
     removeEventListener('resize', this.alRedimensionar);
+    this.fondo.geometry.dispose();
+    this.fondo.material.dispose();
     this.controles.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
@@ -163,14 +226,17 @@ export class Escena {
   }
 
   /**
-   * El color con que se limpia el lienzo. Lo cambia el tema.
+   * El fondo del lienzo: el centro, donde cae la luz, y el borde. Lo cambia el tema.
    *
-   * Es el color de LIMPIEZA del renderer y no un `scene.background`, a propósito: el pase de
-   * selección de `Splats.piezaEn` pone su propio color de limpieza y lee un píxel, así que
-   * un fondo que fuera parte de la escena se colaría en ese píxel como si fuera un FDI.
+   * ⚠️ El fondo es un objeto de la escena, y el pase de selección de `Splats.piezaEn`
+   * apaga todo lo que no es suyo antes de leer el píxel: si no, su color se leería como un
+   * código FDI. El color de limpieza se iguala al del borde para el primer fotograma.
    */
-  ponFondo(color: number): void {
-    this.renderer.setClearColor(color, 1);
+  ponFondo(centro: number, borde: number): void {
+    // Los hex del tema son sRGB y el shader no convierte: se cargan SIN gestión de color.
+    this.fondo.material.uniforms['centro']!.value.setHex(centro, 'srgb-linear');
+    this.fondo.material.uniforms['borde']!.value.setHex(borde, 'srgb-linear');
+    this.renderer.setClearColor(borde, 1);
   }
 
   dibuja(): void {
@@ -182,6 +248,7 @@ export class Escena {
     const { clientWidth: w, clientHeight: h } = this.lienzo;
     this.renderer.setSize(w, h, false);
     const aspecto = w / Math.max(h, 1);
+    this.fondo.material.uniforms['aspecto']!.value = aspecto;
     this.perspectiva.aspect = aspecto;
     this.perspectiva.updateProjectionMatrix();
     // El frustum ortográfico se deriva del encuadre: `medioAlto` lo fija `encuadraCaja`,

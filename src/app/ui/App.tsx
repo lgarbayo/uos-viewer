@@ -26,6 +26,7 @@ import { Odontograma } from './Odontograma';
 import { PanelClinico } from './PanelClinico';
 import { PanelContenedor } from './PanelContenedor';
 import { Portada } from './Portada';
+import { Procedencia } from './Procedencia';
 import { useAviso } from './useAviso';
 import { useTema } from './useTema';
 import { useVisor } from './useVisor';
@@ -46,6 +47,7 @@ export function App() {
   const [abierto, setAbierto] = useState<IdModal | null>(null);
   const { aviso, avisa } = useAviso();
   const [tema, ponTema] = useTema();
+  const [huesoVisible, setHuesoVisible] = useState(false);
   /** Cada apertura se numera: la respuesta de una apertura vieja no pisa a la nueva. */
   const aperturas = useRef(0);
 
@@ -61,7 +63,11 @@ export function App() {
     setEstado({ fase: 'abriendo', nombre: fichero.name });
     try {
       const c = await abreCaso(fichero, visor);
-      if (n === aperturas.current) setEstado({ fase: 'abierto', caso: c });
+      if (n !== aperturas.current) return;
+      // Lo que el `Visor` encendió al cargar: el hueso sale encendido salvo colocación
+      // provisional. El estado de React parte de ahí para no contradecir al lienzo.
+      setHuesoVisible(c.hueso !== null && !c.hueso.colocacion.provisional);
+      setEstado({ fase: 'abierto', caso: c });
     } catch (err) {
       if (err instanceof VisorLiberado || n !== aperturas.current) return;
       // Se enseña el mensaje entero: los del loader dicen QUÉ regla del spec no se cumple,
@@ -193,6 +199,13 @@ export function App() {
           </button>
         )}
       </nav>
+
+      {caso && (
+        <Procedencia caso={caso} huesoVisible={huesoVisible} alCambiarHueso={(si) => {
+          visor?.enciendeHueso(si);
+          setHuesoVisible(si);
+        }} />
+      )}
 
       {caso && caso.generales.length > 0 && (
         <div id="vistas-barra">

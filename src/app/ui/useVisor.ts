@@ -21,7 +21,11 @@ export function useVisor(montaje: RefObject<HTMLElement | null>): Visor | null {
     if (!el) return;
     const v = new Visor(el);
     setVisor(v);
+    // Sólo en desarrollo, para inspeccionar el render desde la consola junto a
+    // `__uosDiagnostico()`. El build de producción elimina la rama entera.
+    if (import.meta.env.DEV) (window as unknown as { __uosVisor?: Visor }).__uosVisor = v;
     return () => {
+      if (import.meta.env.DEV) delete (window as unknown as { __uosVisor?: Visor }).__uosVisor;
       setVisor(null);
       void v.dispose();
     };
