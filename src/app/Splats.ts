@@ -44,6 +44,7 @@ import {
 } from 'three';
 
 import type { CampoPly } from '../uos/Ply';
+import { mideEspaciado } from './Espaciado';
 
 /**
  * Cuánto se amplifica sigma para que la capa se vea. Ver el aviso de arriba.
@@ -122,8 +123,32 @@ export const UMBRAL_ALFA = 8 / 255;
  * con otro vóxel tendría otro, y una constante en milímetros lo dibujaría mal.
  */
 const TAMANO_POR_ESPACIADO = 1.1;
-/** Cuántos puntos se muestrean para medir el espaciado. Bastan pocos: es una mediana. */
-const MUESTRA_ESPACIADO = 1500;
+
+/**
+ * Qué fracción del espaciado del eje MÁS separado mide el lado de un splat del campo de
+ * DENSIDAD. Ver `Espaciado.cobertura`.
+ *
+ * ⚠️ **Va en 2 y no en 1,1 porque el perfil del splat es gaussiano, no un disco.** Con el
+ * lado igual al espaciado, a medio camino entre dos cortes el perfil ya ha caído al 13 %
+ * (`exp(−2,5 · 0,9²)`): la suma oscila corte a corte y el hueso se ve en franjas. Con el
+ * doble, la sigma efectiva del perfil (lado/√20) llega a media separación y la suma es
+ * lisa. Es la misma cuenta que da el tamaño declarado de una gaussiana del CBCT de agosto:
+ * σ = 0,30 mm en el eje de los cortes, o sea un lado de 1,34 mm para 0,6 mm de corte.
+ */
+const TAMANO_POR_COBERTURA = 2;
+
+/**
+ * Con qué potencia de lo que crece el lado del splat se reduce su alfa.
+ *
+ * ⚠️ **No es 2, aunque el área crezca al cuadrado, y está MEDIDO.** El lienzo es de 8 bits
+ * por canal: en aditivo, una aportación por debajo de 1/255 se redondea a cero. Con la
+ * compensación por área la mayoría de los splats caían bajo ese suelo y, en agosto, el
+ * lienzo recibía el 4 % de la luz que recibía con el tamaño anterior: el hueso
+ * desaparecía. Se midió la luz total del hueso solo (suma de lo que cada píxel sube sobre
+ * el fondo) con el tamaño anterior y con el nuevo a varios alfas: la misma luz sale con
+ * ×0,17, que para un lado 3,6 veces mayor es un exponente de 1,4.
+ */
+const EXPONENTE_COMPENSACION = 1.4;
 
 /**
  * Cómo se compone el campo de DENSIDAD sobre el fondo. Las dos son conmutativas, y por eso
@@ -161,12 +186,15 @@ const VERTEX = /* glsl */ `
   attribute float radio;
   varying float vAlfa;
   uniform float ganancia;
+  // Lo que se agrandaron los splats para cubrir la rejilla, devuelto en alfa. Ver
+  // \`añade\`: sin él, el campo brilla más cuanto más gruesos son sus cortes.
+  uniform float cobertura;
   uniform float escala;
   uniform float tope;
   // 1 = perspectiva (el tamano cae con la distancia), 0 = ortografica (no cae).
   uniform float perspectiva;
   void main() {
-    vAlfa = clamp(sigma * ganancia, 0.0, 1.0);
+    vAlfa = clamp(sigma * ganancia * cobertura, 0.0, 1.0);
     vec4 vista = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * vista;
     // El tamaño es la proyección de VERDAD y no una constante a ojo: un radio r a
@@ -293,85 +321,6 @@ export interface Capa {
 }
 
 /**
- * Muestreo determinista cuando la capa no cabe.
- *
- * ⚠️ Uniforme y con semilla fija, **no** «las más densas primero». Quedarse con las de
- * mayor sigma parece mejor y cambia lo que el campo dice: la atenuación que se ve dejaría
- * de ser proporcional a la que se midió, y encender dos capas ya no sumaría bien. Un
- * muestreo uniforme escala la suma entera por un factor conocido.
- */
-/**
- * Distancia mediana al vecino más próximo. El sigma natural de la nube.
- *
- * ⚠️ **Se consulta contra TODOS los puntos, no contra una muestra**, y la diferencia no es
- * un matiz: la primera versión medía 1.500 puntos repartidos por toda la mandíbula y
- * calculaba la distancia **entre ellos**, o sea el espaciado de la muestra. Daba 2,22 mm
- * donde el real es 0,47 — casi cinco veces— y con eso los splats salían del tamaño de un
- * diente.
- *
- * Se indexan los puntos en una rejilla uniforme y cada consulta mira su celda y las 26 de
- * alrededor. Construirla es lineal y las consultas son constantes; un KD-tree daría lo
- * mismo con más código que mantener.
- */
-function _espaciado(pos: Float32Array, n: number): number {
-  if (n < 2) return 0;
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (let i = 0; i < n; i++) {
-    const x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!;
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
-  }
-  const diagonal = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ);
-  if (!(diagonal > 0)) return 0;
-  // Celda del orden del espaciado esperado para una nube volumétrica. No hace falta
-  // acertar: sólo que caigan unos pocos puntos por celda.
-  const celda = Math.max(diagonal / Math.cbrt(n) , 1e-6) * 2;
-  const clave = (x: number, y: number, z: number): number =>
-    (Math.floor((x - minX) / celda) * 73856093) ^
-    (Math.floor((y - minY) / celda) * 19349663) ^
-    (Math.floor((z - minZ) / celda) * 83492791);
-
-  const rejilla = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) {
-    const k = clave(pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!);
-    const c = rejilla.get(k);
-    if (c) c.push(i);
-    else rejilla.set(k, [i]);
-  }
-
-  const m = Math.min(MUESTRA_ESPACIADO, n);
-  const paso = n / m;
-  const d: number[] = [];
-  for (let q = 0; q < m; q++) {
-    const i = Math.floor(q * paso);
-    const x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!;
-    let mejor = Infinity;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          const c = rejilla.get(clave(x + dx * celda, y + dy * celda, z + dz * celda));
-          if (!c) continue;
-          for (const j of c) {
-            if (j === i) continue;
-            const a = pos[j * 3]! - x;
-            const b = pos[j * 3 + 1]! - y;
-            const e = pos[j * 3 + 2]! - z;
-            const r = a * a + b * b + e * e;
-            if (r < mejor) mejor = r;
-          }
-        }
-      }
-    }
-    if (Number.isFinite(mejor)) d.push(Math.sqrt(mejor));
-  }
-  if (!d.length) return 0;
-  d.sort((x, y) => x - y);
-  return d[Math.floor(d.length / 2)]!;
-}
-
-/**
  * Lanza si el campo no trae lo que una capa de apariencia necesita. Se llama ANTES de
  * entregarla al rasterizador: una capa que se dibuja y luego falla quedaría en pantalla sin
  * que el visor la diera por pintada.
@@ -383,6 +332,14 @@ export function compruebaApariencia(id: string, campo: CampoPly): void {
   }
 }
 
+/**
+ * Muestreo determinista cuando la capa no cabe.
+ *
+ * ⚠️ Uniforme y con semilla fija, **no** «las más densas primero». Quedarse con las de
+ * mayor sigma parece mejor y cambia lo que el campo dice: la atenuación que se ve dejaría
+ * de ser proporcional a la que se midió, y encender dos capas ya no sumaría bien. Un
+ * muestreo uniforme escala la suma entera por un factor conocido.
+ */
 function _muestrea(n: number, tope: number): Int32Array | null {
   if (n <= tope) return null;
   const paso = n / tope;
@@ -455,8 +412,24 @@ export class Splats {
     // `TAMANO_POR_ESPACIADO` — con el declarado a secas no se solapa nada y se ve como
     // polvo. Se mide DESPUÉS de muestrear, sobre lo que de verdad se va a dibujar:
     // muestrear separa las gaussianas y el espaciado del original ya no valdría.
-    const minimo = _espaciado(pos, m) * TAMANO_POR_ESPACIADO;
+    //
+    // ⚠️ **Se cubre el eje MÁS separado, no el vecino más próximo.** Un CBCT trae cortes
+    // más gruesos que su píxel —0,6 mm frente a 0,3 en el caso de agosto— y con el vecino
+    // más próximo quedaba una franja vacía entre corte y corte: el hueso se veía rayado.
+    // El splat es redondo, así que en el corte se dibuja más ancho de lo que haría falta:
+    // el hueso sale algo más suave, que es justo lo que se busca en un tejido translúcido.
+    //
+    // ⚠️ **Y lo que se agranda el splat se devuelve en alfa**, para que la luz que llega
+    // al lienzo siga siendo la que se calibró con `GANANCIA_DISPLAY`. En aditivo cada
+    // píxel suma tantos splats como lo cubren, y eso crece con el área del splat: sin la
+    // compensación, un CBCT de cortes gruesos se vería más denso que uno fino, que es
+    // justo lo contrario de lo que dice el dato. Ver `EXPONENTE_COMPENSACION`.
+    const { vecino, cobertura } = mideEspaciado(pos, m);
+    const minimo = cobertura * TAMANO_POR_COBERTURA;
     for (let i = 0; i < m; i++) radio[i] = Math.max(radio[i]!, minimo);
+    // Respecto al tamaño con que se calibró la ganancia: el del vecino más próximo.
+    const calibrado = vecino * TAMANO_POR_ESPACIADO;
+    const compensa = minimo > calibrado ? (calibrado / minimo) ** EXPONENTE_COMPENSACION : 1;
 
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(pos, 3));
@@ -468,6 +441,7 @@ export class Splats {
         uniforms: {
           tono: { value: tono },
           ganancia: { value: ganancia },
+          cobertura: { value: compensa },
           // Lo pone `sincroniza` en cada fotograma: depende del alto del lienzo y del
           // `fov`, y los dos cambian —al redimensionar y al aplicar una vista guardada—.
           escala: { value: 1000.0 },
@@ -577,7 +551,7 @@ export class Splats {
       // ⚠️ scale_0 viene en logaritmo (convención INRIA): exp para obtener mm lineales.
       radio[i] = s0 ? Math.exp(s0[j]!) : 0;
     }
-    const minimo = _espaciado(pos, m) * TAMANO_POR_ESPACIADO;
+    const minimo = mideEspaciado(pos, m).vecino * TAMANO_POR_ESPACIADO;
     for (let i = 0; i < m; i++) radio[i] = Math.max(radio[i]!, minimo);
 
     const g = new BufferGeometry();

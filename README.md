@@ -170,6 +170,18 @@ medido de la nube —calculado con una rejilla espacial, validado contra un KD-t
 de error—. Es un apaño, y encima corto: ese espaciado (0,212 mm) es la distancia al vecino
 de OTRA fila, no el hueco real de 1,35 mm.
 
+Los campos de los casos de prueba de hoy son rejillas de CBCT, y con ellas el apaño ya no se
+queda corto: el espaciado se mide **eje a eje** y el splat cubre el **más separado**. Los dos
+casos tienen 0,3 × 0,3 mm en el corte, pero 0,45 o 0,6 mm entre cortes. Con el vecino más
+próximo (0,3 mm) quedaba una franja vacía entre corte y corte, y el hueso se veía rayado en
+horizontal. El lado del splat es 2 × ese espaciado, porque su perfil es gaussiano: con el
+lado igual al espaciado, a medio camino entre cortes el perfil ya ha caído al 13 %. Lo que
+crece el splat se devuelve en alfa, con un exponente **medido** (1,4) y no el 2 del área. El
+lienzo es de 8 bits, y por debajo de 1/255 la aportación se redondea a cero: con el 2, el
+hueso de agosto recibía el 4 % de la luz que recibía antes. Con 1,4 recibe la misma en
+agosto y el 117 % en noviembre. El hueso sale algo más suave en el corte, que es justo el
+aspecto de cristal que se buscaba.
+
 **La limitación que el spec ya reconoce y aquí también:** componer GS translúcido con
 volumen translúcido no tiene solución exacta con dos pasadas independientes. Cuando llegue
 el paso 2, la política de v1 será GS encima con opacidad global, y en vistas con volumen
@@ -236,6 +248,15 @@ gaussiano del CBCT. No hay mallas sólidas.
   - En claro **absorbe**: se multiplica (`dst · (1 − src)`). Es Beer-Lambert en forma de
     producto, como una radiografía.
   - Las dos composiciones son conmutativas, así que la decisión de no ordenar se mantiene.
+- **Encía**: apagada por defecto, para que las coronas se lean como dientes y no como una
+  arcada. La separa la numeración en uso: el código 0 es la encía **y todo lo que el modelo
+  no asignó**, y el panel lo dice. Sin numeración no hay corte y se ve todo lo medido. Las
+  piezas que no caben en el rasterizador van con ella.
+- **Raíces**: las gaussianas del CBCT del compuesto que su `derived_seg` asigna a una pieza
+  (`source_modality = 0` y código ≠ 0), en marfil de visualización, dentro del hueso. Solo
+  se dibujan si el contenedor las numera: en agosto son 236.261; noviembre no numera
+  ninguna y la capa no aparece. Es el diente entero del CBCT, corona incluida: por encima
+  de la encía lo tapa el escáner.
 - **Conductos nerviosos**: amarillo reservado. **Ningún contenedor trae hoy esa capa**, y el
   visor (Layer 1) no la infiere. El panel lo dice en vez de callarlo. Dibujarla exige que
   el emisor la escriba primero.
