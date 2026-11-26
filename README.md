@@ -256,7 +256,8 @@ gaussiano del CBCT. No hay mallas sólidas.
   (`source_modality = 0` y código ≠ 0), en marfil de visualización, dentro del hueso. Solo
   se dibujan si el contenedor las numera: en agosto son 236.261; noviembre no numera
   ninguna y la capa no aparece. Es el diente entero del CBCT, corona incluida: por encima
-  de la encía lo tapa el escáner.
+  de la encía lo tapa el escáner. En claro absorben en gris cálido y no en ámbar: el
+  amarillo es del conducto, y ninguna otra capa puede llevarlo.
 - **Conductos nerviosos**: amarillo reservado. **Ningún contenedor trae hoy esa capa**, y el
   visor (Layer 1) no la infiere. El panel lo dice en vez de callarlo. Dibujarla exige que
   el emisor la escriba primero.

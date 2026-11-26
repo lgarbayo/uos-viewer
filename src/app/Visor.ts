@@ -83,16 +83,21 @@ export const TEMA_3D: Record<Tema, {
   readonly hueso: Composicion;
   readonly tonoHueso: [number, number, number];
   /**
-   * Las raíces del CBCT. En oscuro EMITEN marfil; en claro ABSORBEN sobre todo el azul, que
-   * es lo que hace que un producto sobre beige salga ámbar y no gris. Falso color, como el
-   * del hueso: es densidad medida separada por un modelo, no esmalte ni dentina.
+   * Las raíces del CBCT. En oscuro EMITEN marfil; en claro ABSORBEN casi por igual, con algo
+   * más de azul: salen gris cálido. Falso color, como el del hueso: es densidad medida
+   * separada por un modelo, no esmalte ni dentina.
+   *
+   * ⚠️ **En claro no pueden absorber sobre todo el azul.** Así estaba, y sobre el beige del
+   * fondo las raíces salían ámbar —amarillo donde se acumulan, rojizo donde saturan—: el
+   * color que la leyenda reserva al conducto nervioso. Una capa que no lo es no puede
+   * llevarlo.
    */
   readonly tonoRaiz: [number, number, number];
 }> = {
   oscuro: { centro: 0x16191d, borde: 0x040506, hueso: 'emision', tonoHueso: [0.62, 0.66, 0.70],
     tonoRaiz: [0.95, 0.88, 0.72] },
   claro: { centro: 0xf5f0e6, borde: 0xdcd4c3, hueso: 'absorcion', tonoHueso: [0.50, 0.50, 0.48],
-    tonoRaiz: [0.30, 0.42, 0.70] },
+    tonoRaiz: [0.46, 0.48, 0.56] },
 };
 
 /**
