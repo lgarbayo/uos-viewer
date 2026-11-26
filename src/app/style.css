@@ -485,6 +485,19 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
   .interruptor-tema .pomo, .interruptor-tema rect, .interruptor-tema .tooltip { transition: none; }
 }
 
+/* --- selector de idioma -------------------------------------------------- */
+/* Dos botones en una pildora hundida, con la misma sombra que el interruptor de tema. */
+.selector-idioma { flex: none; display: inline-flex; padding: .22rem; gap: .15rem;
+  border-radius: 999px; background: var(--pildora); box-shadow: var(--pildora-sombra); }
+.selector-idioma > button { min-width: 2.2rem; height: 1.96rem; padding: 0 .45rem; border: 0;
+  border-radius: 999px; cursor: pointer; font: inherit; font-size: .78rem;
+  letter-spacing: .06em; color: var(--tenue); background: transparent;
+  transition: background .2s ease, color .2s ease; }
+.selector-idioma > button[aria-pressed="true"] { color: var(--texto); background: var(--pomo);
+  box-shadow: var(--pomo-sombra); }
+.selector-idioma > button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .selector-idioma > button { transition: none; } }
+
 /* --- que se ve ----------------------------------------------------------- */
 /*
  * La procedencia de cada capa, sobre el lienzo y bajo las esquinas. Va siempre a la vista
