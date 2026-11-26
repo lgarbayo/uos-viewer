@@ -32,7 +32,7 @@ import { DropInViewer, SceneFormat } from '@mkkellogg/gaussian-splats-3d';
 
 import { aplicaOclusion, partePorColumna } from '../uos/Ply';
 import { fundePly } from './FundePly';
-import { injertaGris, topeEscenas, UNIFORM_GRIS } from './Gris';
+import { BRILLO_GRIS, injertaGris, topeEscenas, UNIFORM_BRILLO, UNIFORM_GRIS } from './Gris';
 
 /**
  * Corte de neblina por defecto, en la escala 0-255 de la biblioteca.
@@ -87,6 +87,8 @@ export class Apariencia {
   private enciaVisible = true;
   /** Si ya se avisó de que el shader no admite el gris: una vez por sesión, no por clic. */
   private sinGrisAvisado = false;
+  /** El brillo del gris del tema actual. Ver `ponBrilloGris`. */
+  private brilloGris = BRILLO_GRIS;
 
   /**
    * El grupo que hay que colgar de la escena, o `null` si aún no hay ninguna capa.
@@ -295,8 +297,22 @@ export class Apariencia {
     const valor = new Array<number>(tope).fill(0);
     m.vertexShader = vs;
     m.uniforms[UNIFORM_GRIS] = { value: valor };
+    m.uniforms[UNIFORM_BRILLO] = { value: this.brilloGris };
     m.needsUpdate = true;
     return valor;
+  }
+
+  /**
+   * Cuánto brilla el gris de lo no seleccionado, respecto a su luminancia. Lo pone el tema.
+   *
+   * ⚠️ **Uno por tema, porque el mismo gris no sirve a los dos fondos.** Sobre el fondo
+   * oscuro, 0,55 deja las vecinas claras y la pieza pulsada sigue siendo la más luminosa. Sobre
+   * el beige del modo claro, el mismo 0,55 las dejaba casi gris marengo. Ver `TEMA_3D`.
+   */
+  ponBrilloGris(k: number): void {
+    this.brilloGris = k;
+    const u = this.visor?.viewer.splatMesh?.material?.uniforms?.[UNIFORM_BRILLO];
+    if (u) u.value = k;
   }
 
   /** Los códigos FDI que tienen escena propia, sin la encía. */

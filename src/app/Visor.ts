@@ -93,11 +93,19 @@ export const TEMA_3D: Record<Tema, {
    * llevarlo.
    */
   readonly tonoRaiz: [number, number, number];
+  /**
+   * El brillo del gris de las piezas NO seleccionadas, respecto a su luminancia. Ver
+   * `Apariencia.ponBrilloGris`. En oscuro, 0,55: las vecinas salen claras y la pulsada sigue
+   * siendo la más luminosa. En claro, 1 —desaturar sin oscurecer—: con 0,55 salían gris
+   * marengo y con 0,85 gris medio, y sobre el beige pesaban más que la pieza pulsada. Ahí la
+   * distingue el color, no el brillo.
+   */
+  readonly brilloGris: number;
 }> = {
   oscuro: { centro: 0x16191d, borde: 0x040506, hueso: 'emision', tonoHueso: [0.62, 0.66, 0.70],
-    tonoRaiz: [0.95, 0.88, 0.72] },
+    tonoRaiz: [0.95, 0.88, 0.72], brilloGris: 0.55 },
   claro: { centro: 0xf5f0e6, borde: 0xdcd4c3, hueso: 'absorcion', tonoHueso: [0.50, 0.50, 0.48],
-    tonoRaiz: [0.46, 0.48, 0.56] },
+    tonoRaiz: [0.46, 0.48, 0.56], brilloGris: 1.0 },
 };
 
 /**
@@ -699,6 +707,7 @@ export class Visor {
     this.tema = tema;
     const t = TEMA_3D[tema];
     this.escena.ponFondo(t.centro, t.borde);
+    this.apariencia.ponBrilloGris(t.brilloGris);
     if (this.huesoId) this.splats.ponComposicion(t.hueso, t.tonoHueso, this.huesoId);
     if (this.raicesId) this.splats.ponComposicion(t.hueso, t.tonoRaiz, this.raicesId);
   }

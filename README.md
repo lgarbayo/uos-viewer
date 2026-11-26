@@ -156,7 +156,9 @@ El rasterizador admite como mucho 32 escenas, y cada pieza es una. Si una dentic
 cabe, las piezas más pequeñas **se funden con la encía**: se dibujan, pero no se pueden
 aislar, y un aviso las nombra.
 
-**Al pulsar una pieza, el resto pasa a gris** y ella conserva su color. Antes el resto sólo
+**Al pulsar una pieza, el resto pasa a gris** y ella conserva su color: en modo oscuro un
+gris algo más apagado que la pieza, y en claro un gris claro, casi blanco, porque sobre el
+beige un gris oscuro pesaba más que la pieza pulsada. Antes el resto sólo
 bajaba de opacidad, y no se distinguía: una corona son miles de gaussianas superpuestas, y
 aunque cada una deje pasar más luz, juntas siguen tapando casi lo mismo. El rasterizador
 sólo expone visibilidad y opacidad por escena, así que el gris se injerta en su shader de
