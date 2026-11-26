@@ -22,10 +22,14 @@ FDI C3). Todo lo dibujado es de este paciente:
 
 - **Coronas**: la apariencia 3DGS del escáner intraoral. Su color **no es medido**: lo
   aprendió el ajuste y depende de la etiqueta de cada gaussiana. Se nota en la encía: una
-  franja de unos 2 mm alrededor de cada corona sale del color del diente y no rosada. Son
-  unas 8.000 gaussianas que la numeración C3 da como encía y la segmentación con la que se
-  entrenó el color (`asset.seg_teeth`) daba como diente. Es el color que trae el contenedor:
-  el visor no lo corrige, y «Qué se ve» enseña la nota del emisor que lo avisa.
+  franja de unos 2 mm alrededor de cada corona sale del color del diente y no rosada. La
+  apariencia es la que se entrenó en agosto con la numeración del modelo de entonces, y el
+  emisor la reutilizó renumerándola con C3: 25.148 de sus 113.540 gaussianas pasaron de
+  diente a encía y conservan el color del diente. Es el color que trae el contenedor: el
+  visor no lo corrige, y «Qué se ve» enseña la nota del emisor que lo avisa. El arreglo está
+  en el emisor, que ya no reutiliza una apariencia cuya frontera diente/encía cambió. Con la
+  apariencia entrenada de nuevo con C3, la encía junto a las coronas sale del mismo rosa que
+  el resto. Las capturas de esta sección son de antes de ese arreglo.
 - **Numeración FDI** (Capa 3, `investigational`): la pone `gaussian-engine.apariencia`, y
   es la que separa la encía. La encía sale oculta por defecto y se enciende desde «Qué se ve».
 - **Hueso y raíces**: la densidad medida del CBCT, en gris de visualización. La registración
