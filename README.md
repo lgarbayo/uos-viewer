@@ -13,6 +13,38 @@ npm run dev          # arrastra un .uos a la ventana
 npm test             # los tests del lector (ver más abajo)
 ```
 
+## Cómo se ve: el caso de noviembre
+
+![El caso de noviembre girando en el visor, en modo oscuro](docs/medios/noviembre-orbita.gif)
+
+Un paciente real, abierto tal cual sale del emisor (`agentic-smart-health` 0.18, segmentación
+FDI C3). Todo lo dibujado es de este paciente:
+
+- **Coronas**: la apariencia 3DGS del escáner intraoral. Su color **no es medido**: lo
+  aprendió el ajuste y depende de la etiqueta de cada gaussiana.
+- **Numeración FDI** (Capa 3, `investigational`): la pone `gaussian-engine.apariencia`, y
+  es la que separa la encía. La encía sale oculta por defecto y se enciende desde «Qué se ve».
+- **Hueso y raíces**: la densidad medida del CBCT, en gris de visualización. La registración
+  CBCT → escáner declara rms 0,56 mm y está **sin verificar por una persona**.
+- **Conductos nerviosos**: este contenedor no los trae, y el visor no los infiere.
+
+| Modo oscuro | Modo claro |
+|---|---|
+| ![Vista frontal en modo oscuro, con el panel «Qué se ve»](docs/medios/noviembre-visor-oscuro.png) | ![La misma vista en modo claro](docs/medios/noviembre-visor-claro.png) |
+| **Pieza 11 aislada** desde el odontograma, con su ficha | **Vista oclusal** |
+| ![La pieza 11 aislada y su ficha clínica](docs/medios/noviembre-pieza-11.png) | ![Vista oclusal de la arcada superior](docs/medios/noviembre-oclusal.png) |
+
+Las capas, una a una: encía visible, encía oculta, sin hueso y la pieza 11 aislada.
+
+![Las capas del render, una a una](docs/medios/noviembre-capas.gif)
+
+**Vídeo** (20 s, con rótulos): [`docs/medios/noviembre-recorrido.mp4`](docs/medios/noviembre-recorrido.mp4).
+
+Se publica con el consentimiento de uso y publicación del paciente, confirmado por el
+equipo clínico. El contenedor no se versiona (ver `.gitignore`), y las capturas tapan su
+identificador `urn:uuid`. Los vídeos y GIF se generan fotograma a fotograma desde el lienzo
+del visor, no grabando la pantalla: así el orden de los splats está asentado en cada fotograma.
+
 ## La interfaz es React; el render no
 
 React (19, en `src/app/ui/`) pinta **sólo** la interfaz: barra, esquinas, modales,
