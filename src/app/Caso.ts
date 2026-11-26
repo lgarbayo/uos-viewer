@@ -133,10 +133,13 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   } catch (e) {
     reparos.push({ grave: false, texto: `Sidecar de segmentación no interpretable: ${String(e)}` });
   }
-  // ⚠️ **La frontera y el margen, sólo de la segmentación que NUMERA lo que se ve.** Con dos
-  // `derived_seg` (el del compuesto y el de la malla), tomar el primero que los declare
-  // pondría el criterio de un modelo bajo la pieza que numeró otro.
+  // ⚠️ **La frontera y el margen, primero de la segmentación que NUMERA lo que se ve.** Si
+  // ella no los declara, de la que sí lo haga —es lo que pasa cuando la apariencia hereda la
+  // numeración del modelo del escáner, que es quien mide recortes y margen—, y la interfaz
+  // nombra SIEMPRE de qué `derived_seg` salen: nunca quedan atribuidos al que numera.
   const numeradora = segmentaciones.find((s) => s.id === etiquetas) ?? null;
+  const conFrontera = numeradora?.frontera ? numeradora : segmentaciones.find((s) => s.frontera);
+  const conMargen = numeradora?.margen ? numeradora : segmentaciones.find((s) => s.margen);
 
   const vistaDePieza = new Map<number, VistaJSON>();
   for (const v of vistas) {
@@ -172,7 +175,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     escanerFallido,
     etiquetas,
     segmentaciones,
-    frontera: numeradora?.frontera ? { id: numeradora.id, piezas: numeradora.frontera } : null,
-    margen: numeradora?.margen ? { id: numeradora.id, margen: numeradora.margen } : null,
+    frontera: conFrontera?.frontera ? { id: conFrontera.id, piezas: conFrontera.frontera } : null,
+    margen: conMargen?.margen ? { id: conMargen.id, margen: conMargen.margen } : null,
   };
 }

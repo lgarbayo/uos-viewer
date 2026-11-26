@@ -66,7 +66,7 @@ export function Ficha({
         // tal cual, exactamente como lo hacía el `innerHTML` de antes de React.
         ? <div dangerouslySetInnerHTML={{ __html: fichaDe(fdi, p, true) }} />
         : <p className="nota">el informe no dice nada de esta pieza</p>}
-      {aviso && <p className="aviso-frontera">{aviso}</p>}
+      {aviso && <p className="aviso-frontera">{aviso} · <code>{frontera!.id}</code></p>}
       {lineaMargen && <p className="nota">{lineaMargen} · <code>{margen!.id}</code></p>}
       <p className="nota">segmentada por {segmentador || '—'} ·{' '}
         {capa !== null ? <span className="l3">Capa {capa}</span>

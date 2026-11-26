@@ -176,6 +176,8 @@ export class Apariencia {
     // grupos más pequeños se funden con la encía: se pierde poder aislar esas piezas —y se
     // dice— en vez de perder la escena.
     const libres = MAX_ESCENAS - this.escenas.length;
+    // Se apuntan sólo si la carga sale: unas fundidas de una capa que falló no son de nadie.
+    let fundidosAqui: number[] = [];
     let codigos = [...trozos.keys()].sort((a, b) => a - b);
     if (codigos.length > libres) {
       const porTamaño = [...codigos].sort(
@@ -195,7 +197,7 @@ export class Apariencia {
         trozos.delete(c);
       }
       if (juntos.length) trozos.set(0, fundePly(juntos));
-      this.fundidos.push(...fundir);
+      fundidosAqui = [...fundir];
       codigos = [...trozos.keys()].sort((a, b) => a - b);
     }
 
@@ -223,6 +225,7 @@ export class Apariencia {
     // contenedor: estas escenas son de un `DropInViewer` que ya no existe y sus índices no
     // valen para el siguiente. El llamante lanza `VisorLiberado` justo después.
     if (this.visor !== visor) return;
+    this.fundidos.push(...fundidosAqui);
     codigos.forEach((c, i) => this.escenas.push({ capa: id, fdi: c, indice: base + i }));
   }
 

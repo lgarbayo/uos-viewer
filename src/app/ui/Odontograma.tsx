@@ -92,8 +92,10 @@ export function Odontograma({ segmentadas, piezas, frontera, seleccionada, alPul
           <p className="nota">En gris: sin color declarado — ahí el campo pinta el degradado de
             respaldo, que no es color del paciente.</p>
           <p className="nota">● hallazgo en el informe</p>
+          {/* De qué `derived_seg` sale el recorte, y no una Capa supuesta: la Capa la dice su
+              sidecar en «Qué se ve» y en Contenedor → Inferencia. */}
           {frontera && <p className="nota"><span className="recorte">!</span> recorte fuera del
-            rango de experto · <span className="l3">Capa 3</span></p>}
+            rango de experto · <code>{frontera.id}</code></p>}
         </div>
       </div>
     </div>
