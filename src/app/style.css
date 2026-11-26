@@ -55,6 +55,7 @@
      contenedor trae hoy esa capa, y la muestra sale apagada para decir que falta. */
   --capa-corona: linear-gradient(160deg, #f3ece0, #d9ccb4);
   --capa-hueso: rgb(160 170 180 / .55);
+  --capa-raiz: rgb(242 225 184);
   --conducto: #e6c357;
   color-scheme: dark;
 }
@@ -87,6 +88,8 @@
     0 0 12px rgb(244 162 54 / .35);
   --pomo-punto: #4a4440;
   --capa-hueso: rgb(96 98 100 / .5);
+  /* Gris cálido y no ámbar: el amarillo es del conducto. */
+  --capa-raiz: rgb(170 158 140);
   --conducto: #c9a227;
   color-scheme: light;
 }
@@ -519,7 +522,7 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
 .muestra-capa.numeracion { background: var(--aviso); }
 /* Rosa apagado: es la etiqueta de una capa, no el color de la encía del paciente. */
 .muestra-capa.encia { background: rgb(196 128 118); }
-.muestra-capa.raiz { background: rgb(242 225 184); }
+.muestra-capa.raiz { background: var(--capa-raiz); }
 
 /* --- inferencia (derived/) ------------------------------------------------ */
 .rejilla-seg { display: grid; gap: .45rem; margin-top: .4rem;
