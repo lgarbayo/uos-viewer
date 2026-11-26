@@ -62,6 +62,8 @@ const TONOS: Record<string, [number, number, number]> = {
 
 const PERFILES_DENSIDAD = ['ash-twin/1.0', 'histora-twin/1.0', 'histora-twin-fitted/1.0'];
 const PERFILES_APARIENCIA = ['ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'];
+/** Los perfiles de densidad que declaran gaussianas MEDIDAS, no ajustadas. */
+const PERFILES_MEDIDOS = ['ash-twin/1.0', 'histora-twin/1.0'];
 
 export type Tema = 'claro' | 'oscuro';
 
@@ -194,6 +196,8 @@ export interface ResultadoCapas {
   readonly apariencia: InfoApariencia | null;
   readonly hueso: InfoHueso | null;
   readonly escaner: InfoEscaner | null;
+  /** Un compuesto con gaussianas del escáner que no se pintaron, y por qué. */
+  readonly escanerFallido: { readonly id: string; readonly motivo: string } | null;
   /** El `derived_seg` cuyas etiquetas dan la selección y el odontograma, o `null`. */
   readonly etiquetas: string | null;
 }
@@ -302,6 +306,9 @@ export class Visor {
     let etiquetas: string | null = null;
     /** El compuesto CBCT + escáner, por si hace falta para las coronas. */
     let compuesto: Compuesto | null = null;
+    /** Las coronas del escáner que había y no se pintaron, y por qué. */
+    let escanerFallido: { id: string; motivo: string } | null = null;
+    let compuestoDescartado: { id: string; motivo: string } | null = null;
 
     let deGlb = false;
     for (const escena of uos.de('mesh_gs_scene').filter(
@@ -313,15 +320,25 @@ export class Visor {
           // ⚠️ `KHR_gaussian_splatting` transporta gaussianas; no tiene dónde decir que
           // `region_id` es inferencia con vocabulario ISO-3950. Eso lo dice el sidecar.
           const d = await uos.sidecar<DescriptorGS>(escena);
-          region ??= d?.columns?.find((c) => c.name === 'region_id') ?? null;
-          apariencia ??= { id: escena.id, rol: d?.role ?? 'apariencia (KHR_gaussian_splatting)',
-            medida: d?.measured === true, nota: d?.note ?? '' };
           let campo = campoDesdeSplats(malla.splats);
           const inferred = await leeEtiquetas(uos, escena, campo.n, malla.splats.posiciones);
           this.sigueSiendo(gen);
+          if (inferred) campo = { ...campo, columnas: { ...campo.columnas,
+            region_id: Float32Array.from(inferred.labels) } };
+          await this.apariencia.añade(escena.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
+          this.sigueSiendo(gen);
+          this.splats.añadeApariencia(
+            escena.id, 'apariencia inferida (KHR_gaussian_splatting)', campo,
+            { medida: false, nota: '', soloSeleccion: true },
+          );
+          // ⚠️ **Se anota DESPUÉS de pintarse, no antes.** Una apariencia declarada que no
+          // llega a la pantalla no es apariencia: si se anotara antes, un fallo al pintarla
+          // dejaría al visor creyendo que la hay y saltándose las coronas del escáner.
+          deGlb = true;
+          apariencia ??= { id: escena.id, rol: d?.role ?? 'apariencia (KHR_gaussian_splatting)',
+            medida: d?.measured === true, nota: d?.note ?? '' };
+          region ??= d?.columns?.find((c) => c.name === 'region_id') ?? null;
           if (inferred) {
-            campo = { ...campo, columnas: { ...campo.columnas,
-              region_id: Float32Array.from(inferred.labels) } };
             region = { name: 'region_id', measured: false,
               derived_from: inferred.meta.model?.name ?? inferred.asset.id,
               vocabulary: inferred.meta.encoding?.vocabulary ?? null };
@@ -329,13 +346,6 @@ export class Visor {
             avisos.push('Selección dental basada en segmentación inferida; las fronteras requieren revisión.');
           } else if (!malla.splats.regionId) avisos.push(
             `${escena.id}: apariencia sin etiquetas FDI; no permite aislar piezas.`);
-          await this.apariencia.añade(escena.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
-          this.sigueSiendo(gen);
-          this.splats.añadeApariencia(
-            escena.id, 'apariencia inferida (KHR_gaussian_splatting)', campo,
-            { medida: false, nota: '', soloSeleccion: true },
-          );
-          deGlb = true;
         }
       } catch (e) {
         if (e instanceof VisorLiberado) throw e;
@@ -376,9 +386,6 @@ export class Visor {
           // `region_id` es inferencia y no medida.
           region ??= d.columns?.find((c) => c.name === 'region_id') ?? null;
           if (deGlb) continue;
-          apariencia ??= { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
-            nota: d.note ?? '' };
-          if (inferred) etiquetas ??= inferred.asset.id;
           await this.apariencia.añade(a.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
           this.sigueSiendo(gen);
           this.splats.añadeApariencia(a.id, d.role ?? a.id, campo, {
@@ -389,6 +396,10 @@ export class Visor {
             // para la caja de encuadre y el pase de selección contra `region_id`.
             soloSeleccion: true,
           });
+          // Anotada DESPUÉS de pintarse: ver el camino del glTF.
+          apariencia ??= { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
+            nota: d.note ?? '' };
+          if (inferred) etiquetas ??= inferred.asset.id;
         } else {
           // ⚠️ **El campo se coloca con las registraciones DECLARADAS, o no se coloca.** Viaja
           // en el marco del CBCT y la apariencia en el del escáner: sin la matriz del
@@ -402,9 +413,19 @@ export class Visor {
             continue;
           }
           if (compuesto === null && d.columns?.some((c) => c.name === 'source_modality')) {
-            compuesto = { id: a.id, campo, colocacion, etiquetas: inferred
-              ? { id: inferred.asset.id, modelo: inferred.meta.model?.name ?? null,
-                vocabulario: inferred.meta.encoding?.vocabulary ?? null } : null };
+            // ⚠️ **Sólo el gemelo MEDIDO.** Las coronas se rotulan «forma medida del escáner»,
+            // y eso sólo es verdad si el sidecar lo declara (`measured: true`) con un perfil
+            // de medida. Un compuesto ajustado (`*-fitted`) trae escalas de un ajuste, y no se
+            // pinta como si fueran del escáner.
+            if (PERFILES_MEDIDOS.includes(d.profile) && d.measured === true) {
+              compuesto = { id: a.id, campo, colocacion, etiquetas: inferred
+                ? { id: inferred.asset.id, modelo: inferred.meta.model?.name ?? null,
+                  vocabulario: inferred.meta.encoding?.vocabulary ?? null } : null };
+            } else {
+              compuestoDescartado ??= { id: a.id, motivo: `perfil \`${d.profile}\`` +
+                (d.measured === true ? '' : ', sin `measured: true`') +
+                ': no declara forma medida' };
+            }
           }
           const esHueso = hueso === null && esCampoDeHueso(d);
           const tema = TEMA_3D[this.tema];
@@ -453,16 +474,25 @@ export class Visor {
         }
       } catch (e) {
         if (e instanceof VisorLiberado) throw e;
-        avisos.push(`${compuesto.id}: las gaussianas del escáner no se pudieron pintar: ` +
-          (e instanceof Error ? e.message : String(e)));
+        const motivo = e instanceof Error ? e.message : String(e);
+        escanerFallido = { id: compuesto.id, motivo };
+        avisos.push(`${compuesto.id}: las gaussianas del escáner no se pudieron pintar: ${motivo}`);
       }
+    } else if (apariencia === null && compuestoDescartado) {
+      escanerFallido = compuestoDescartado;
+      avisos.push(`${compuestoDescartado.id}: no se pintan sus gaussianas del escáner: ` +
+        compuestoDescartado.motivo);
     }
+
+    if (this.apariencia.sinAislar.length) avisos.push(
+      `Las piezas ${[...this.apariencia.sinAislar].sort((a, b) => a - b).join(', ')} se dibujan ` +
+      'con la encía y no se pueden aislar: no caben como escena propia en el rasterizador.');
 
     // El grupo del rasterizador se cuelga DESPUÉS de cargar: se crea perezosamente y un
     // `.uos` sin apariencia no lo llega a instanciar.
     const gs = this.apariencia.grupo;
     if (gs && gs.parent !== this.escena.scene) this.escena.scene.add(gs);
-    return { avisos, region, apariencia, hueso, escaner, etiquetas };
+    return { avisos, region, apariencia, hueso, escaner, escanerFallido, etiquetas };
   }
 
   /**
@@ -491,15 +521,25 @@ export class Visor {
     const malla = uos.de('mesh_gs_scene').find((a) => !a.external
       && a.media_type === 'model/gltf-binary' && a.frame === canonico);
     if (malla) {
-      const bytes = await uos.bytes(malla);
-      this.sigueSiendo(gen);
-      const pos = posicionesEnCanonico(campo, idx, colocacion.matriz);
-      posMalla = leeGlb(bytes).posiciones;
-      correspondencia = motivoSinCorrespondencia(pos, posMalla);
-      const leidas = leeNormalesGlb(bytes);
-      const sinNormales = motivoSinNormales(pos, posMalla, leidas);
-      if (sinNormales) relieve = { sinRelieve: sinNormales };
-      else { normales = leidas; relieve = { de: malla.id }; }
+      // ⚠️ La malla es OPCIONAL para las coronas: si no se puede leer, se pierden el relieve
+      // y la numeración por malla, no las coronas, que no necesitan nada de ella.
+      try {
+        const bytes = await uos.bytes(malla);
+        this.sigueSiendo(gen);
+        const pos = posicionesEnCanonico(campo, idx, colocacion.matriz);
+        posMalla = leeGlb(bytes).posiciones;
+        correspondencia = motivoSinCorrespondencia(pos, posMalla);
+        const leidas = leeNormalesGlb(bytes);
+        const sinNormales = motivoSinNormales(pos, posMalla, leidas);
+        if (sinNormales) relieve = { sinRelieve: sinNormales };
+        else { normales = leidas; relieve = { de: malla.id }; }
+      } catch (e) {
+        if (e instanceof VisorLiberado) throw e;
+        const m = `la malla \`${malla.id}\` no se pudo leer: ` +
+          (e instanceof Error ? e.message : String(e));
+        posMalla = null; normales = null;
+        correspondencia = m; relieve = { sinRelieve: m };
+      }
     }
 
     // La numeración: primero la del compuesto, contada por modalidad; si no numera el
@@ -513,8 +553,12 @@ export class Visor {
     }
     let usada: NumeracionEscaner['usada'] = null;
     let motivo: string | null = null;
-    let deMalla: Int16Array | null = null;
-    if (compuesto.etiquetas && delCompuesto && delCompuesto.escaner > 0) {
+    // ⚠️ **Las etiquetas de las coronas son SÓLO las del `derived_seg` elegido.** Una columna
+    // `region_id` que el compuesto trajera por su cuenta, sin sidecar que diga qué modelo la
+    // produjo, no se usa: haría seleccionables unas coronas cuya numeración nadie declara.
+    let numeracionElegida: ArrayLike<number> | null = null;
+    if (compuesto.etiquetas && region && delCompuesto && delCompuesto.escaner > 0) {
+      numeracionElegida = Array.from(idx, (i) => region[i]!);
       usada = { id: compuesto.etiquetas.id, modelo: compuesto.etiquetas.modelo,
         vocabulario: compuesto.etiquetas.vocabulario, via: 'compuesto', malla: null,
         conPieza: delCompuesto.escaner };
@@ -529,7 +573,7 @@ export class Visor {
           const conPieza = cuentaConPieza(Float32Array.from(r.labels));
           if (conPieza === 0) motivo = `${r.asset.id} no numera ningún vértice`;
           else {
-            deMalla = r.labels;
+            numeracionElegida = r.labels;
             usada = { id: r.asset.id, modelo: r.meta.model?.name ?? null,
               vocabulario: r.meta.encoding?.vocabulary ?? null, via: 'malla', malla: malla.id,
               conPieza };
@@ -545,7 +589,7 @@ export class Visor {
     }
 
     const { campo: escaner, espaciado, infladas, sigmaMinima } =
-      campoDelEscaner(campo, idx, colocacion.matriz, normales, deMalla);
+      campoDelEscaner(campo, idx, colocacion.matriz, normales, numeracionElegida);
     const capa = `${id}#escaner`;
     await this.apariencia.añade(capa, plyDesdeCampo(escaner), UMBRAL_ALFA_255);
     this.sigueSiendo(gen);
@@ -598,10 +642,13 @@ export class Visor {
     // A píxeles del buffer de dibujo: el lienzo tiene `pixelRatio` y el destino de 1x1 se
     // recorta sobre esa rejilla, no sobre la de CSS.
     const k = this.lienzo.width / Math.max(r.width, 1);
-    return this.splats.piezaEn(
+    const fdi = this.splats.piezaEn(
       this.escena.renderer, this.escena.camera,
       Math.round((clientX - r.left) * k), Math.round((clientY - r.top) * k),
       this.lienzo.width, this.lienzo.height,
     );
+    // Una pieza fundida con la encía (tope de escenas del rasterizador) se dibuja pero no se
+    // puede aislar: ofrecerla sería encender la encía entera.
+    return fdi !== null && this.apariencia.sinAislar.includes(fdi) ? null : fdi;
   }
 }

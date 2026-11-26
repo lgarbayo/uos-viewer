@@ -35,12 +35,20 @@ describe('las gaussianas del escáner dentro del compuesto', () => {
     expect(Array.from(indicesDelEscaner(compuesto()))).toEqual([1, 3]);
   });
 
-  it('se colocan con la registración y llevan su FDI', () => {
+  it('se colocan con la registración y llevan la numeración que se les da', () => {
     const c = compuesto();
     const m = new Matrix4().makeTranslation(10, 0, 0);
-    const { campo: e } = campoDelEscaner(c, indicesDelEscaner(c), m, null);
+    const idx = indicesDelEscaner(c);
+    const region = c.columnas['region_id']!;
+    const { campo: e } = campoDelEscaner(c, idx, m, null, Array.from(idx, (i) => region[i]!));
     expect(Array.from(e.columnas['x']!)).toEqual([11, 12]);
     expect(Array.from(e.columnas['region_id']!)).toEqual([11, 21]);
+  });
+
+  it('un region_id del compuesto sin numeración elegida no se usa', () => {
+    const c = compuesto();
+    const { campo: e } = campoDelEscaner(c, indicesDelEscaner(c), new Matrix4(), null);
+    expect(e.columnas['region_id']).toBeUndefined();
   });
 
   it('se dibujan al menos del espaciado MEDIDO de la nube, y lo cuentan', () => {
@@ -98,7 +106,7 @@ describe('las gaussianas del escáner dentro del compuesto', () => {
     expect(color(1, 0, 0)).toBeCloseTo(MARFIL[0] * (1 - RELIEVE), 5); // rasante
   });
 
-  it('las etiquetas de la malla, ya verificadas, sustituyen al region_id del compuesto', () => {
+  it('las etiquetas de la malla, ya verificadas, mandan sobre el region_id del compuesto', () => {
     const c = compuesto();
     const idx = indicesDelEscaner(c);
     const { campo: e } = campoDelEscaner(c, idx, new Matrix4(), null, Int16Array.from([13, 23]));

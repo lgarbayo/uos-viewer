@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aplicaOclusion, leePly, partePorColumna } from '../src/uos/Ply';
+import { fundePly } from '../src/app/FundePly';
 
 /** Un PLY del perfil del proyecto, escrito a mano para no depender de un fichero real. */
 function ply(n: number, comentarios: string[] = []): Uint8Array {
@@ -202,5 +203,16 @@ describe('la oclusión ambiental', () => {
     // Un contenedor sin malla no pudo calcularla, y no oscurecer es lo correcto.
     const sin = ply(4);
     expect(aplicaOclusion(sin)).toBe(sin);
+  });
+});
+
+describe('fundePly', () => {
+  it('junta trozos de partePorColumna en un PLY legible con todos los vértices', () => {
+    const a = partePorColumna(ply(3, ['perfil ash-twin/1.0']), 'region_id').get(26)!;
+    const b = partePorColumna(ply(2, ['perfil ash-twin/1.0']), 'region_id').get(26)!;
+    const junto = leePly(fundePly([a, b]));
+    expect(junto.n).toBe(5);
+    expect(Array.from(junto.columnas['x']!)).toEqual([0, 1, 2, 0, 1]);
+    expect(junto.comentarios['perfil']).toBe('ash-twin/1.0');
   });
 });
