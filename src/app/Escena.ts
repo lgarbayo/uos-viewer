@@ -162,6 +162,17 @@ export class Escena {
     this.controles.update();
   }
 
+  /**
+   * El color con que se limpia el lienzo. Lo cambia el tema.
+   *
+   * Es el color de LIMPIEZA del renderer y no un `scene.background`, a propósito: el pase de
+   * selección de `Splats.piezaEn` pone su propio color de limpieza y lee un píxel, así que
+   * un fondo que fuera parte de la escena se colaría en ese píxel como si fuera un FDI.
+   */
+  ponFondo(color: number): void {
+    this.renderer.setClearColor(color, 1);
+  }
+
   dibuja(): void {
     this.controles.update();
     this.renderer.render(this.scene, this.camera);

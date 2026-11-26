@@ -58,6 +58,12 @@ const TONOS: Record<string, [number, number, number]> = {
 const PERFILES_DENSIDAD = ['ash-twin/1.0', 'histora-twin/1.0', 'histora-twin-fitted/1.0'];
 const PERFILES_APARIENCIA = ['ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'];
 
+/**
+ * El fondo del lienzo en cada tema. Casi negro en oscuro: es lo que deja leer una
+ * superficie translúcida, y el negro puro la recorta demasiado.
+ */
+export const FONDO_3D = { oscuro: 0x050608, claro: 0xe9e3d6 } as const;
+
 /** Lo que una carga deja dicho para la interfaz. */
 export interface ResultadoCapas {
   readonly avisos: string[];
@@ -258,6 +264,11 @@ export class Visor {
     const gs = this.apariencia.grupo;
     if (gs && gs.parent !== this.escena.scene) this.escena.scene.add(gs);
     return { avisos, region };
+  }
+
+  /** El tema de la interfaz llega también a la escena: el fondo 3D cambia con él. */
+  ponTema(tema: 'claro' | 'oscuro'): void {
+    this.escena.ponFondo(FONDO_3D[tema]);
   }
 
   /** Encuadra sobre la apariencia, o sobre la primera capa si no la hay. */
