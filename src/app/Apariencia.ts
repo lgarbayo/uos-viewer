@@ -72,6 +72,14 @@ export class Apariencia {
   private readonly urls: string[] = [];
   private resaltada: number | null = null;
   private readonly fundidos: number[] = [];
+  /**
+   * Cerrada para siempre: el visor que la usaba se desmontó.
+   *
+   * ⚠️ Sin esto, una carga que siguiera en vuelo al desmontar —el `await` de un PLY de
+   * ocho megas— llamaría a `añade` sobre una apariencia ya limpia, y `arranca` crearía un
+   * `DropInViewer` nuevo, con sus workers, colgado de una escena que ya no existe.
+   */
+  private cerrada = false;
 
   /**
    * El grupo que hay que colgar de la escena, o `null` si aún no hay ninguna capa.
@@ -84,6 +92,7 @@ export class Apariencia {
   }
 
   private arranca(): DropInViewer {
+    if (this.cerrada) throw new Error('la apariencia ya se liberó: el visor se desmontó');
     if (this.visor) return this.visor;
     this.visor = new DropInViewer({
       // ⚠️ **Sin memoria compartida.** El worker de ordenación usa `SharedArrayBuffer`, y
@@ -303,7 +312,14 @@ export class Apariencia {
     if (this.visor) {
       const v = this.visor;
       this.visor = null;
+      v.removeFromParent();
       await v.dispose();
     }
+  }
+
+  /** `limpia` y no volver a arrancar nunca. Para el desmontaje del visor. */
+  async dispose(): Promise<void> {
+    this.cerrada = true;
+    await this.limpia();
   }
 }

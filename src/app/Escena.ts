@@ -48,6 +48,14 @@ export class Escena {
   private controles: OrbitControls;
   /** Medio alto del frustum ortográfico, en mm. Lo fija `encuadraCaja`. */
   private medioAlto = 50;
+  /**
+   * El manejador de `resize`, guardado para poder QUITARLO.
+   *
+   * ⚠️ Antes era una flecha anónima colgada de `window` para siempre: con una sola escena
+   * por página daba igual, pero React monta y desmonta (en desarrollo, dos veces seguidas
+   * con el modo estricto), y cada escena muerta seguía redimensionando un renderer liberado.
+   */
+  private readonly alRedimensionar = (): void => this.redimensiona();
 
   /** La cámara que se está usando. Cambia con `ponOrtografica`. */
   get camera(): PerspectiveCamera | OrthographicCamera {
@@ -83,7 +91,26 @@ export class Escena {
     // 90 mm mirada desde 95 cada rueda salta demasiado.
 
     this.redimensiona();
-    addEventListener('resize', () => this.redimensiona());
+    addEventListener('resize', this.alRedimensionar);
+  }
+
+  /**
+   * Suelta TODO lo que la escena tiene vivo: los controles (que escuchan el lienzo), el
+   * listener de `resize` y el contexto WebGL.
+   *
+   * ⚠️ **`forceContextLoss` y no sólo `dispose`.** `renderer.dispose()` libera los recursos
+   * de three pero deja el contexto vivo hasta que el recolector se lleve el lienzo, y el
+   * navegador admite unos dieciséis: con el doble montaje del modo estricto y unas cuantas
+   * recargas en caliente se llega al tope y el más antiguo se pierde sin avisar. Perderlo a
+   * propósito lo devuelve ya. Por eso mismo el lienzo NO se reutiliza: un `<canvas>` cuyo
+   * contexto se perdió devuelve ese mismo contexto perdido a `getContext`, así que quien
+   * monte otra escena tiene que traer un lienzo nuevo (ver `Visor`).
+   */
+  dispose(): void {
+    removeEventListener('resize', this.alRedimensionar);
+    this.controles.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 
   /**

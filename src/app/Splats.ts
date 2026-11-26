@@ -798,4 +798,14 @@ export class Splats {
     this.capas.length = 0;
     this.resaltada = null;
   }
+
+  /**
+   * `limpia` y además el destino de 1x1 del pase de selección. Se llama al desmontar el
+   * visor, no al abrir otro contenedor: entre contenedores el destino se reutiliza.
+   */
+  dispose(): void {
+    this.limpia();
+    this.objetivo?.dispose();
+    this.objetivo = null;
+  }
 }

@@ -324,8 +324,15 @@ export async function regenera(
   // que sin esto la función que de verdad usa el visor no se podría probar entera: sólo
   // sus piezas, y el pegamento entre ellas es donde estaban los dos fallos que encontró
   // el test de color.
-  calcula: (p: Peticion, progreso: (frac: number) => void) => Promise<Respuesta> = enWorker,
+  calcula?: (p: Peticion, progreso: (frac: number) => void) => Promise<Respuesta>,
+  /**
+   * Para cortar el cálculo a medias. ⚠️ Hace falta desde que la interfaz es de React: el
+   * panel que lanza la regeneración se desmonta al cerrar el modal, y el Worker seguía
+   * calculando veinte segundos para entregar el resultado a nadie.
+   */
+  señal?: AbortSignal,
 ): Promise<Regenerado> {
+  calcula ??= (p, progreso) => enWorker(p, progreso, señal);
   const escena = uos.porPrioridad.find((a) => a.id === 'asset.scene')
     ?? uos.porPrioridad.find((a) => a.uri.endsWith('.glb') && !a.external);
   if (!escena) {
@@ -559,9 +566,17 @@ async function primeraApariencia(uos: UosLoader): Promise<Asset | null> {
  * y en el hilo principal la página se queda congelada varios segundos — sin poder ni
  * dibujar la barra de progreso que diría que sigue viva.
  */
-function enWorker(p: Peticion, progreso: (frac: number) => void): Promise<Respuesta> {
+function enWorker(
+  p: Peticion, progreso: (frac: number) => void, señal?: AbortSignal,
+): Promise<Respuesta> {
   return new Promise((cumple, falla) => {
+    if (señal?.aborted) { falla(new DOMException('cancelada', 'AbortError')); return; }
     const w = new Worker(new URL('./regenera.worker.ts', import.meta.url), { type: 'module' });
+    // Terminar el Worker es lo único que lo para: no mira ninguna bandera mientras calcula.
+    señal?.addEventListener('abort', () => {
+      w.terminate();
+      falla(new DOMException('cancelada', 'AbortError'));
+    }, { once: true });
     w.onmessage = (ev: MessageEvent<Respuesta & { progreso?: number; error?: string }>) => {
       if (typeof ev.data.progreso === 'number') { progreso(ev.data.progreso); return; }
       w.terminate();
