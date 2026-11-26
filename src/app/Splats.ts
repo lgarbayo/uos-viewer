@@ -371,6 +371,18 @@ function _espaciado(pos: Float32Array, n: number): number {
   return d[Math.floor(d.length / 2)]!;
 }
 
+/**
+ * Lanza si el campo no trae lo que una capa de apariencia necesita. Se llama ANTES de
+ * entregarla al rasterizador: una capa que se dibuja y luego falla quedaría en pantalla sin
+ * que el visor la diera por pintada.
+ */
+export function compruebaApariencia(id: string, campo: CampoPly): void {
+  const c = campo.columnas;
+  if (!c['x'] || !c['y'] || !c['z'] || !c['opacity'] || !c['f_dc_0'] || !c['f_dc_1'] || !c['f_dc_2']) {
+    throw new Error(`La capa \`${id}\` no trae x/y/z/opacity/f_dc_*: no es un perfil de apariencia.`);
+  }
+}
+
 function _muestrea(n: number, tope: number): Int32Array | null {
   if (n <= tope) return null;
   const paso = n / tope;
@@ -532,11 +544,8 @@ export class Splats {
     const fdc0 = campo.columnas['f_dc_0'];
     const fdc1 = campo.columnas['f_dc_1'];
     const fdc2 = campo.columnas['f_dc_2'];
-    if (!x || !y || !z || !opacity || !fdc0 || !fdc1 || !fdc2) {
-      throw new Error(
-        `La capa \`${id}\` no trae x/y/z/opacity/f_dc_*: no es un perfil de apariencia.`,
-      );
-    }
+    compruebaApariencia(id, campo);
+    if (!x || !y || !z || !opacity || !fdc0 || !fdc1 || !fdc2) throw new Error('inalcanzable');
     // ⚠️ **El FDI por gaussiana, si el fichero lo trae.** Es lo que permite seleccionar una
     // pieza SIN malla delante: el picking del spec esta definido sobre los vertices de un
     // `scene.glb`, y un contenedor de solo gaussianas no lo lleva. La columna es

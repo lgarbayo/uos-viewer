@@ -218,8 +218,9 @@ gaussiano del CBCT. No hay mallas sólidas.
      cuando el sidecar lo declara.
 
   Una columna `region_id` que el compuesto traiga por su cuenta, sin un `derived_seg` que la
-  declare, no se usa. La frontera por pieza y el margen gingival de la ficha salen de la
-  misma segmentación que numera, nunca de otra.
+  declare, no se usa. La frontera por pieza y el margen gingival salen de la segmentación
+  que numera y, si ella no los declara, de la que sí lo haga. La ficha y el odontograma
+  nombran siempre de qué `derived_seg` salen.
 
   El visor no infiere ninguna etiqueta: une un código que el contenedor ya trae y dice de
   dónde sale. En el caso de agosto, el del compuesto numera 236.261 gaussianas del CBCT y

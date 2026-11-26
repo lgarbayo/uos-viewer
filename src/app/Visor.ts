@@ -25,7 +25,7 @@ import {
   motivoSinNormales, posicionesEnCanonico,
 } from './Escaner';
 import { colocaEnCanonico, type Colocacion } from './Marcos';
-import { Splats, type Composicion } from './Splats';
+import { compruebaApariencia, Splats, type Composicion } from './Splats';
 
 /**
  * Una columna del campo, tal y como la declara el sidecar.
@@ -325,6 +325,7 @@ export class Visor {
           this.sigueSiendo(gen);
           if (inferred) campo = { ...campo, columnas: { ...campo.columnas,
             region_id: Float32Array.from(inferred.labels) } };
+          compruebaApariencia(escena.id, campo);
           await this.apariencia.añade(escena.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
           this.sigueSiendo(gen);
           this.splats.añadeApariencia(
@@ -371,6 +372,9 @@ export class Visor {
         );
         continue;
       }
+      // Un compuesto CBCT + escáner que falle ANTES de llegar a ser `compuesto` tiene que
+      // decirse igual: el contenedor sí trae esas gaussianas aunque no se pinten.
+      const esCompuesto = d.columns?.some((c) => c.name === 'source_modality') === true;
       try {
         let campo = leePly(await uos.bytes(a));
         const inferred = await leeEtiquetas(uos, a, campo.n);
@@ -386,6 +390,7 @@ export class Visor {
           // `region_id` es inferencia y no medida.
           region ??= d.columns?.find((c) => c.name === 'region_id') ?? null;
           if (deGlb) continue;
+          compruebaApariencia(a.id, campo);
           await this.apariencia.añade(a.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
           this.sigueSiendo(gen);
           this.splats.añadeApariencia(a.id, d.role ?? a.id, campo, {
@@ -410,6 +415,8 @@ export class Visor {
             avisos.push(`${a.id}: su marco \`${a.frame}\` no conecta con el canónico por ` +
               'ninguna registración declarada. No se dibuja: colocarlo a ojo sería inventar ' +
               'un alineamiento.');
+            if (esCompuesto && compuesto === null) compuestoDescartado ??= { id: a.id,
+              motivo: `su marco \`${a.frame}\` no conecta con el canónico` };
             continue;
           }
           if (compuesto === null && d.columns?.some((c) => c.name === 'source_modality')) {
@@ -450,7 +457,9 @@ export class Visor {
         }
       } catch (e) {
         if (e instanceof VisorLiberado) throw e;
-        avisos.push(`${a.id}: ${e instanceof Error ? e.message : String(e)}`);
+        const motivo = e instanceof Error ? e.message : String(e);
+        avisos.push(`${a.id}: ${motivo}`);
+        if (esCompuesto && compuesto === null) compuestoDescartado ??= { id: a.id, motivo };
       }
     }
 
