@@ -14,7 +14,7 @@ import type { Manifiesto } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader, type Reparo } from '../uos/UosLoader';
 import { leeSegmentaciones, type Margen, type FronteraPieza, type Segmentacion } from './Segmentacion';
-import type { InfoApariencia, InfoHueso, Visor } from './Visor';
+import type { InfoApariencia, InfoEscaner, InfoHueso, Visor } from './Visor';
 
 export interface VistaJSON {
   id: string;
@@ -56,6 +56,10 @@ export interface Caso {
   readonly apariencia: InfoApariencia | null;
   /** El campo del CBCT que se dibuja como hueso, y con qué registraciones se colocó. */
   readonly hueso: InfoHueso | null;
+  /** Las coronas desde el escáner del compuesto, cuando no hay apariencia. */
+  readonly escaner: InfoEscaner | null;
+  /** El `derived_seg` que da la selección y el odontograma, o `null`. */
+  readonly etiquetas: string | null;
   /** Lo que declara cada segmentación de `derived/`. Ver `Segmentacion.ts`. */
   readonly segmentaciones: readonly Segmentacion[];
   /** De qué segmentación sale el criterio de frontera por pieza, si alguna lo declara. */
@@ -72,7 +76,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   // ⚠️ **Las capas GAUSSIANAS son lo único que se dibuja, y son EL MODELO.** El contenedor
   // lleva sólo el campo gaussiano y el manifiesto —el escaneo original viaja fuera,
   // nombrado por su sha256—, así que no hay malla que enseñar mientras.
-  const { avisos, region, apariencia, hueso } = await visor.carga(uos);
+  const { avisos, region, apariencia, hueso, escaner, etiquetas } = await visor.carga(uos);
 
   if (vistas[0]) visor.escena.aplicaVista(vistas[0].camera);
   else visor.encuadra();
@@ -139,7 +143,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
 
   // Si el contenedor no trae `region_id`, no hay selección y la interfaz no promete una
   // que no existe.
-  const capaFdi = visor.splats.capas.find((c) => c.conFdi) ?? null;
+  const capaFdi = visor.splats.capas.find((c) => c.conFdi && c.conPieza > 0) ?? null;
 
   return {
     uos,
@@ -158,6 +162,8 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     fidelidad,
     apariencia,
     hueso,
+    escaner,
+    etiquetas,
     segmentaciones,
     frontera: conFrontera?.frontera ? { id: conFrontera.id, piezas: conFrontera.frontera } : null,
     margen: conMargen?.margen ? { id: conMargen.id, margen: conMargen.margen } : null,

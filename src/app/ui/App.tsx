@@ -48,6 +48,11 @@ export function App() {
   const { aviso, avisa } = useAviso();
   const [tema, ponTema] = useTema();
   const [huesoVisible, setHuesoVisible] = useState(false);
+  /**
+   * La numeración FDI es Capa 3 y va como capa APARTE, encendible: apagada, no hay
+   * selección ni odontograma navegable, y lo que se ve es sólo lo medido.
+   */
+  const [numeracion, setNumeracion] = useState(true);
   /** Cada apertura se numera: la respuesta de una apertura vieja no pisa a la nueva. */
   const aperturas = useRef(0);
 
@@ -67,6 +72,7 @@ export function App() {
       // Lo que el `Visor` encendió al cargar: el hueso sale encendido salvo colocación
       // provisional. El estado de React parte de ahí para no contradecir al lienzo.
       setHuesoVisible(c.hueso !== null && !c.hueso.colocacion.provisional);
+      setNumeracion(true);
       setEstado({ fase: 'abierto', caso: c });
     } catch (err) {
       if (err instanceof VisorLiberado || n !== aperturas.current) return;
@@ -151,7 +157,7 @@ export function App() {
    * del lienzo y no en el lienzo: el lienzo lo crea el `Visor` y cambia con cada montaje.
    */
   function alClicar(ev: MouseEvent): void {
-    if (!visor || !caso?.hayEtiquetas) return;
+    if (!visor || !caso?.hayEtiquetas || !numeracion) return;
     const fdi = visor.piezaEn(ev.clientX, ev.clientY);
     selecciona(fdi);
     if (fdi === null) setSeleccion({ tipo: 'fallo' });
@@ -204,6 +210,11 @@ export function App() {
         <Procedencia caso={caso} huesoVisible={huesoVisible} alCambiarHueso={(si) => {
           visor?.enciendeHueso(si);
           setHuesoVisible(si);
+        }} numeracion={numeracion} alCambiarNumeracion={(si) => {
+          // Apagarla devuelve la arcada entera: una pieza aislada por una numeración que ya
+          // no se enseña sería un estado que la interfaz no explica.
+          if (!si) selecciona(null);
+          setNumeracion(si);
         }} />
       )}
 
@@ -216,13 +227,14 @@ export function App() {
       )}
 
       {caso && (
-        <Ficha hayEtiquetas={caso.hayEtiquetas} seleccion={seleccion} piezas={caso.piezas}
+        <Ficha hayEtiquetas={caso.hayEtiquetas && numeracion} seleccion={seleccion} piezas={caso.piezas}
           segmentador={caso.segmentador} frontera={caso.frontera} margen={caso.margen}
           alCerrar={() => selecciona(null)} />
       )}
 
       {caso && (
-        <Odontograma segmentadas={caso.segmentadas} piezas={caso.piezas} frontera={caso.frontera}
+        <Odontograma segmentadas={numeracion ? caso.segmentadas : []} piezas={caso.piezas}
+          frontera={numeracion ? caso.frontera : null}
           seleccionada={seleccion.tipo === 'pieza' ? seleccion.fdi : null}
           alPulsar={(fdi) => {
             // Volver a pulsar la misma casilla devuelve la arcada entera.

@@ -513,6 +513,10 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
 .muestra-capa.corona { background: var(--capa-corona); }
 .muestra-capa.hueso { background: var(--capa-hueso); }
 .muestra-capa.conducto { background: var(--conducto); opacity: .3; }
+/* El marfil del escáner es color de VISUALIZACION; la muestra lo enseña tal cual. */
+.muestra-capa.marfil { background: rgb(230 222 204); }
+.muestra-capa.ausente { background: transparent; border-style: dashed; }
+.muestra-capa.numeracion { background: var(--aviso); }
 
 /* --- inferencia (derived/) ------------------------------------------------ */
 .rejilla-seg { display: grid; gap: .45rem; margin-top: .4rem;

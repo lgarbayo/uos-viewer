@@ -225,11 +225,11 @@ function Resultado({ r }: { r: Regenerado }) {
   const [tresMf, setTresMf] = useState<{ texto: string; malo: boolean } | null>(null);
   return (
     <>
-      <p className="nota">{r.vertices.toLocaleString()} vértices ·{' '}
-        {r.triangulos.toLocaleString()} triángulos</p>
+      <p className="nota">{r.vertices.toLocaleString('es')} vértices ·{' '}
+        {r.triangulos.toLocaleString('es')} triángulos</p>
       <p className="nota">color <b>medido</b> en el {pct} % ·{' '}
-        {r.conFdi.toLocaleString()} con código FDI ·{' '}
-        {r.rellenados.toLocaleString()} hueco(s) heredados de su misma pieza</p>
+        {r.conFdi.toLocaleString('es')} con código FDI ·{' '}
+        {r.rellenados.toLocaleString('es')} hueco(s) heredados de su misma pieza</p>
       <p>
         <button className="guardar" onClick={() => baja(r.ply, 'arcada-color.ply', 'application/octet-stream')}>
           .ply · con color, FDI y medido</button>{' '}

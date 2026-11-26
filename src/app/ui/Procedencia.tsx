@@ -16,12 +16,18 @@ interface Props {
   readonly caso: Caso;
   readonly huesoVisible: boolean;
   readonly alCambiarHueso: (si: boolean) => void;
+  readonly numeracion: boolean;
+  readonly alCambiarNumeracion: (si: boolean) => void;
 }
 
-export function Procedencia({ caso, huesoVisible, alCambiarHueso }: Props) {
-  const { apariencia, hueso, segmentador, hayEtiquetas } = caso;
-  if (!apariencia && !hueso) return null;
+export function Procedencia({
+  caso, huesoVisible, alCambiarHueso, numeracion, alCambiarNumeracion,
+}: Props) {
+  const { apariencia, escaner, hueso, segmentador, hayEtiquetas } = caso;
+  if (!apariencia && !escaner && !hueso) return null;
   const reg = hueso?.colocacion;
+  // El régimen de las etiquetas lo dice SU sidecar, no el visor.
+  const seg = caso.segmentaciones.find((s) => s.id === caso.etiquetas);
   return (
     <aside id="procedencia" aria-label="Qué se ve y de dónde sale">
       <h3>Qué se ve</h3>
@@ -35,10 +41,57 @@ export function Procedencia({ caso, huesoVisible, alCambiarHueso }: Props) {
                 color de la apariencia 3DGS <code>{apariencia.id}</code>
                 {apariencia.medida ? ' · medido' : ' · no medido'}
               </div>
-              {hayEtiquetas && (
-                <div className="nota">numeradas por {segmentador || 'un modelo'} ·{' '}
-                  <span className="l3">Capa 3</span></div>
+            </div>
+          </li>
+        )}
+        {!apariencia && escaner && (
+          <li>
+            <span className="muestra-capa marfil" aria-hidden="true" />
+            <div>
+              <b>Coronas</b> · forma medida del escáner
+              <div className="nota">
+                color de visualización, no del paciente: este caso no trae apariencia ·{' '}
+                {escaner.n.toLocaleString('es')} gaussianas de <code>{escaner.id}</code>
+              </div>
+              <div className="nota">
+                {'de' in escaner.relieve
+                  ? <>relieve con las normales de <code>{escaner.relieve.de}</code>; la malla
+                    no se dibuja</>
+                  : <>sin relieve: {escaner.relieve.sinRelieve}</>}
+              </div>
+              {escaner.numeracion && escaner.numeracion.escaner === 0 && (
+                <div className="nota sinver">
+                  sin numeración en las coronas: <code>{escaner.numeracion.id}</code> numera{' '}
+                  {escaner.numeracion.resto.toLocaleString('es')} gaussianas del CBCT y ninguna
+                  del escáner
+                </div>
               )}
+            </div>
+          </li>
+        )}
+        {!apariencia && !escaner && (
+          <li>
+            <span className="muestra-capa ausente" aria-hidden="true" />
+            <div>
+              <b>Coronas</b>
+              <div className="nota">este contenedor no trae ni apariencia ni gaussianas del
+                escáner: sólo se ve el CBCT</div>
+            </div>
+          </li>
+        )}
+        {hayEtiquetas && (
+          <li>
+            <label className="capa-conmutable">
+              <input type="checkbox" checked={numeracion}
+                onChange={(e) => alCambiarNumeracion(e.target.checked)} />
+              <span className="muestra-capa numeracion" aria-hidden="true" />
+              <span><b>Numeración FDI</b> · selección y odontograma</span>
+            </label>
+            <div className="nota">
+              por {segmentador || 'un modelo'}
+              {caso.etiquetas && <> · <code>{caso.etiquetas}</code></>} ·{' '}
+              <span className="l3">Capa {seg?.capa ?? 3}</span>
+              {seg?.estado && <> · {seg.estado}</>}
             </div>
           </li>
         )}
@@ -54,7 +107,7 @@ export function Procedencia({ caso, huesoVisible, alCambiarHueso }: Props) {
               densidad {hueso.medida ? 'medida' : 'no medida'} <code>{hueso.id}</code>, en gris
               de visualización: es tejido duro, no una segmentación del hueso
               {hueso.dibujadas < hueso.total
-                && ` · ${hueso.dibujadas.toLocaleString()} de ${hueso.total.toLocaleString()} gaussianas`}
+                && ` · ${hueso.dibujadas.toLocaleString('es')} de ${hueso.total.toLocaleString('es')} gaussianas`}
             </div>
             <div className="nota">
               {reg.pasos.length === 0
@@ -86,7 +139,8 @@ export function Procedencia({ caso, huesoVisible, alCambiarHueso }: Props) {
       </ul>
       <p className="nota">
         No es anatomía de referencia ajustada a una imagen: todo lo dibujado es de este
-        paciente{hueso ? ', en dos modalidades unidas por una registración declarada' : ''}.
+        paciente{hueso && (apariencia || escaner)
+          ? ', en dos modalidades unidas por una registración declarada' : ''}.
       </p>
     </aside>
   );
