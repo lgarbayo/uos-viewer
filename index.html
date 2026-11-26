@@ -23,6 +23,13 @@
           t = matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'oscuro';
         }
         document.documentElement.dataset.theme = t === 'claro' ? 'light' : 'dark';
+        // El idioma, igual: lo elegido manda; si no, el del navegador (español o inglés).
+        var i = null;
+        try { i = localStorage.getItem('uos-viewer:idioma'); } catch (e) {}
+        if (i !== 'es' && i !== 'en') {
+          i = /^es\b/i.test(navigator.language || '') ? 'es' : 'en';
+        }
+        document.documentElement.lang = i;
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

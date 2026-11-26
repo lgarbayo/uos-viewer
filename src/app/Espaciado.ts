@@ -132,3 +132,85 @@ function mediana(v: number[]): number {
   v.sort((x, y) => x - y);
   return v[Math.floor(v.length / 2)]!;
 }
+
+/**
+ * Cómo están repartidos los cortes de un volumen a lo largo de su eje de corte.
+ *
+ * ⚠️ **Existe por el CBCT del caso A de noviembre, que llega en cortes sueltos.** Son 65
+ * cortes repartidos por 46,5 mm con huecos de 0,3 a 6,75 mm entre uno y otro, donde una
+ * serie completa a 0,3 mm tendría 156. Cada corte se dibuja bien, pero entre ellos no hay
+ * nada que dibujar: la capa sale como una persiana de láminas grises con los bordes rectos
+ * de la caja, que no se parece a un maxilar. Ensanchar los splats hasta tapar los huecos
+ * sería inventar hueso donde el contenedor no trae medida, así que el visor no lo hace:
+ * lo mide, lo dice, y no enciende la capa de salida.
+ */
+export interface Cortes {
+  /** El eje de corte (0, 1, 2 = x, y, z del marco del campo). */
+  readonly eje: 0 | 1 | 2;
+  /** Cuántos cortes distintos trae. */
+  readonly n: number;
+  /** El paso regular de la serie: la separación más frecuente entre cortes vecinos. */
+  readonly paso: number;
+  /** El mayor hueco entre dos cortes vecinos. */
+  readonly hueco: number;
+  /** De punta a punta, a lo largo del eje. */
+  readonly extension: number;
+  /** Los cortes que tendría la serie a su paso regular, sin huecos. */
+  readonly esperados: number;
+  /**
+   * Si faltan cortes: algún hueco de al menos el doble del paso. Un CBCT completo es
+   * regular, con el mismo paso de punta a punta.
+   */
+  readonly incompleto: boolean;
+}
+
+/** A qué precisión se comparan dos coordenadas para decir que son el mismo corte, en mm. */
+const PRECISION_CORTE = 1e-3;
+
+/**
+ * Los cortes de un campo de densidad, o `null` si sus centros no caen en una rejilla. Ver
+ * `Cortes`.
+ *
+ * El eje de corte es el de mayor hueco: en un CBCT el corte es el eje más separado, y si
+ * faltan cortes, es ahí donde faltan.
+ */
+export function mideCortes(
+  x: ArrayLike<number>, y: ArrayLike<number>, z: ArrayLike<number>, n: number,
+): Cortes | null {
+  if (n < 2) return null;
+  let mejor: Cortes | null = null;
+  for (const [eje, c] of [[0, x], [1, y], [2, z]] as const) {
+    const valores = new Set<number>();
+    for (let i = 0; i < n; i++) {
+      valores.add(Math.round(c[i]! / PRECISION_CORTE));
+      // Una nube que no está en rejilla tiene casi tantos valores como puntos: no hay
+      // cortes que contar, y seguir sólo gastaría memoria.
+      if (valores.size > 4096) return null;
+    }
+    if (valores.size < 2) continue;
+    const v = [...valores].sort((a, b) => a - b).map((k) => k * PRECISION_CORTE);
+    const huecos = v.slice(1).map((w, i) => w - v[i]!);
+    const paso = moda(huecos);
+    const hueco = Math.max(...huecos);
+    const extension = v[v.length - 1]! - v[0]!;
+    const cortes: Cortes = {
+      eje, n: v.length, paso, hueco, extension,
+      esperados: Math.round(extension / paso) + 1,
+      incompleto: hueco >= 2 * paso - PRECISION_CORTE,
+    };
+    if (!mejor || cortes.hueco > mejor.hueco) mejor = cortes;
+  }
+  return mejor;
+}
+
+/** El valor más frecuente, redondeado a la precisión de corte. */
+function moda(v: readonly number[]): number {
+  const cuenta = new Map<number, number>();
+  for (const d of v) {
+    const k = Math.round(d / PRECISION_CORTE);
+    cuenta.set(k, (cuenta.get(k) ?? 0) + 1);
+  }
+  let k = 0, max = -1;
+  for (const [clave, c] of cuenta) if (c > max || (c === max && clave < k)) { k = clave; max = c; }
+  return k * PRECISION_CORTE;
+}

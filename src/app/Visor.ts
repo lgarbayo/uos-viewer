@@ -24,6 +24,7 @@ import {
   campoDelEscaner, cuentaConPieza, indicesDelEscaner, leeNormalesGlb, motivoSinCorrespondencia,
   motivoSinNormales, posicionesEnCanonico,
 } from './Escaner';
+import { mideCortes, type Cortes } from './Espaciado';
 import { colocaEnCanonico, type Colocacion } from './Marcos';
 import { compruebaApariencia, Splats, type Composicion } from './Splats';
 
@@ -141,6 +142,14 @@ export interface InfoHueso {
   readonly colocacion: Colocacion;
   readonly dibujadas: number;
   readonly total: number;
+  /** Cómo llegan los cortes del CBCT, o `null` si sus centros no caen en rejilla. */
+  readonly cortes: Cortes | null;
+  /**
+   * Si la capa sale encendida. Apagada si la colocación es PROVISIONAL (§6: automática y sin
+   * firmar) o si al CBCT le faltan cortes (ver `Cortes`). Sin verificar sí se enciende, y
+   * se dice al lado.
+   */
+  readonly encendidaDeSalida: boolean;
 }
 
 /** Lo que declara de sí misma la capa de apariencia que se dibuja. */
@@ -491,11 +500,16 @@ export class Visor {
             });
           if (esHueso) {
             const capa = this.splats.capas.find((c) => c.id === a.id)!;
-            hueso = { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
-              marco: a.frame, colocacion, dibujadas: capa.dibujadas, total: capa.n };
+            const { x, y, z } = campo.columnas;
+            const cortes = x && y && z ? mideCortes(x, y, z, campo.n) : null;
             // Opción A, decidida: encendido salvo que la colocación sea PROVISIONAL (§6:
             // automática y sin firmar). Sin verificar sí se enciende, y se dice al lado.
-            this.splats.enciende(a.id, !colocacion.provisional);
+            // Y apagado si faltan cortes: sale como una persiana, y se dice por qué.
+            const encendidaDeSalida = !colocacion.provisional && !cortes?.incompleto;
+            hueso = { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
+              marco: a.frame, colocacion, dibujadas: capa.dibujadas, total: capa.n, cortes,
+              encendidaDeSalida };
+            this.splats.enciende(a.id, encendidaDeSalida);
             this.huesoId = a.id;
           }
         }

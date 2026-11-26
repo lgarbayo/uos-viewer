@@ -20,6 +20,7 @@ import { abreCaso, type Caso } from '../Caso';
 import { VisorLiberado } from '../Visor';
 import { Barra } from './Barra';
 import { Ficha, type Seleccion } from './Ficha';
+import { ProveedorIdioma, SelectorIdioma, useEleccionIdioma, type Idioma } from './idioma';
 import { InterruptorTema } from './InterruptorTema';
 import { Modal } from './Modal';
 import { Odontograma } from './Odontograma';
@@ -39,6 +40,39 @@ type Estado =
 
 type IdModal = 'contenedor' | 'clinico';
 
+const es = {
+  ortografica: 'proyección ortográfica',
+  perspectiva: 'proyección en perspectiva',
+  puntos: 'gaussianas como puntos',
+  splats: 'gaussianas como splats',
+  tamano: (k: string) => `tamaño de splat ×${k}`,
+  contenedor: 'Contenedor',
+  tituloContenedor: 'Contenedor · assets, registraciones y reparos',
+  fuera: (n: number) => ` · ${n} fuera`,
+  clinico: 'Clínico',
+  tituloClinico: (schema: string) => `Clínico · ${schema}`,
+  piezas: (n: number) => `${n} piezas`,
+  revision: (n: number) => ` · ${n} revisión`,
+};
+
+const TEXTOS: Record<Idioma, typeof es> = {
+  es,
+  en: {
+    ortografica: 'orthographic projection',
+    perspectiva: 'perspective projection',
+    puntos: 'Gaussians as points',
+    splats: 'Gaussians as splats',
+    tamano: (k) => `splat size ×${k}`,
+    contenedor: 'Container',
+    tituloContenedor: 'Container · assets, registrations and issues',
+    fuera: (n) => ` · ${n} external`,
+    clinico: 'Clinical',
+    tituloClinico: (schema) => `Clinical · ${schema}`,
+    piezas: (n) => `${n} teeth`,
+    revision: (n) => ` · ${n} for review`,
+  },
+};
+
 export function App() {
   const montaje = useRef<HTMLDivElement>(null);
   const visor = useVisor(montaje);
@@ -47,13 +81,16 @@ export function App() {
   const [abierto, setAbierto] = useState<IdModal | null>(null);
   const { aviso, avisa } = useAviso();
   const [tema, ponTema] = useTema();
+  const [idioma, ponIdioma] = useEleccionIdioma();
+  const t = TEXTOS[idioma];
   const [huesoVisible, setHuesoVisible] = useState(false);
-  /**
-   * La numeración FDI es Capa 3 y va como capa APARTE, encendible: apagada, no hay
-   * selección ni odontograma navegable, y lo que se ve es sólo lo medido.
+  /*
+   * ⚠️ **La numeración FDI NO se puede apagar.** Era una casilla en «Qué se ve», y quitarla
+   * sólo servía para perder la selección y el odontograma: es el índice con el que se lee
+   * un caso dental. Que es Capa 3 —un modelo, no una medida— se sigue diciendo en el panel,
+   * en la ficha y en Contenedor → Inferencia.
    */
-  const [numeracion, setNumeracion] = useState(true);
-  /** La encía sale oculta, y vuelve si se apaga la numeración: el corte es Capa 3. */
+  /** La encía sale oculta: la separa la numeración, y el panel lo dice. */
   const [enciaVisible, setEnciaVisible] = useState(false);
   const [raicesVisibles, setRaicesVisibles] = useState(true);
   /** Cada apertura se numera: la respuesta de una apertura vieja no pisa a la nueva. */
@@ -72,10 +109,9 @@ export function App() {
     try {
       const c = await abreCaso(fichero, visor);
       if (n !== aperturas.current) return;
-      // Lo que el `Visor` encendió al cargar: el hueso sale encendido salvo colocación
-      // provisional. El estado de React parte de ahí para no contradecir al lienzo.
-      setHuesoVisible(c.hueso !== null && !c.hueso.colocacion.provisional);
-      setNumeracion(true);
+      // Lo que el `Visor` encendió al cargar (ver `InfoHueso.encendidaDeSalida`). El estado
+      // de React parte de ahí para no contradecir al lienzo.
+      setHuesoVisible(c.hueso?.encendidaDeSalida ?? false);
       setEnciaVisible(false);
       setRaicesVisibles(c.raices !== null);
       setEstado({ fase: 'abierto', caso: c });
@@ -96,11 +132,10 @@ export function App() {
   // El fondo 3D sigue al tema. También al montar: un visor nuevo arranca con el de ahora.
   useEffect(() => { visor?.ponTema(tema); }, [visor, tema]);
 
-  // ⚠️ Ocultar la encía USA la numeración: sin ella no hay corte que enseñar, y lo que se
-  // ve vuelve a ser sólo lo medido, entero.
+  // ⚠️ Ocultar la encía USA la numeración: el código 0 es la encía.
   useEffect(() => {
-    if (caso?.encia) visor?.enciendeEncia(enciaVisible || !numeracion);
-  }, [visor, caso, enciaVisible, numeracion]);
+    if (caso?.encia) visor?.enciendeEncia(enciaVisible);
+  }, [visor, caso, enciaVisible]);
 
   // Arrastrar un `.uos` a cualquier parte de la ventana.
   useEffect(() => {
@@ -138,21 +173,21 @@ export function App() {
       switch (ev.code) {
         case 'KeyO':
           escena.ponOrtografica(!escena.esOrtografica);
-          avisa(`proyección ${escena.esOrtografica ? 'ortográfica' : 'en perspectiva'}`);
+          avisa(escena.esOrtografica ? t.ortografica : t.perspectiva);
           break;
         case 'KeyP':
           apariencia.nube(!apariencia.esNube);
-          avisa(apariencia.esNube ? 'gaussianas como puntos' : 'gaussianas como splats');
+          avisa(apariencia.esNube ? t.puntos : t.splats);
           break;
         // `n` NO existe: el supersampling de display se quitó después de medir que para
         // este contenido no aporta nada visible y cuesta 4× de relleno.
         case 'Equal':
         case 'NumpadAdd':
-          avisa(`tamaño de splat ×${apariencia.escala(0.05).toFixed(2)}`);
+          avisa(t.tamano(apariencia.escala(0.05).toFixed(2)));
           break;
         case 'Minus':
         case 'NumpadSubtract':
-          avisa(`tamaño de splat ×${apariencia.escala(-0.05).toFixed(2)}`);
+          avisa(t.tamano(apariencia.escala(-0.05).toFixed(2)));
           break;
         default:
           return;
@@ -161,14 +196,14 @@ export function App() {
     };
     addEventListener('keydown', tecla);
     return () => removeEventListener('keydown', tecla);
-  }, [visor, abierto, avisa]);
+  }, [visor, abierto, avisa, t]);
 
   /**
    * Picking semántico (§11.3) sobre las gaussianas, contra `region_id`. Va en el envoltorio
    * del lienzo y no en el lienzo: el lienzo lo crea el `Visor` y cambia con cada montaje.
    */
   function alClicar(ev: MouseEvent): void {
-    if (!visor || !caso?.hayEtiquetas || !numeracion) return;
+    if (!visor || !caso?.hayEtiquetas) return;
     const fdi = visor.piezaEn(ev.clientX, ev.clientY);
     selecciona(fdi);
     if (fdi === null) setSeleccion({ tipo: 'fallo' });
@@ -176,17 +211,17 @@ export function App() {
 
   const modales = caso ? {
     contenedor: {
-      titulo: 'Contenedor · assets, registraciones y reparos',
+      titulo: t.tituloContenedor,
       cuenta: (() => {
         const fuera = caso.uos.porPrioridad.filter((a) => a.external).length;
-        return `${caso.uos.porPrioridad.length}${fuera ? ` · ${fuera} fuera` : ''}`;
+        return `${caso.uos.porPrioridad.length}${fuera ? t.fuera(fuera) : ''}`;
       })(),
       grave: caso.reparos.some((r) => r.grave),
     },
     clinico: caso.clinico ? {
-      titulo: `Clínico · ${caso.clinico.schema}`,
-      cuenta: `${caso.clinico.teeth.length} piezas${caso.clinico.review.reasons.length
-        ? ` · ${caso.clinico.review.reasons.length} revisión` : ''}`,
+      titulo: t.tituloClinico(caso.clinico.schema),
+      cuenta: `${t.piezas(caso.clinico.teeth.length)}${caso.clinico.review.reasons.length
+        ? t.revision(caso.clinico.review.reasons.length) : ''}`,
       grave: false,
     } : null,
   } : null;
@@ -197,22 +232,25 @@ export function App() {
   }
 
   return (
-    <>
+    <ProveedorIdioma value={idioma}>
       <div id="montaje" ref={montaje} onClick={alClicar} />
 
       <Barra manifiesto={caso?.manifiesto ?? null} alAbrir={(f) => void abre(f)}
-        extremo={<InterruptorTema tema={tema} alCambiar={ponTema} />} />
+        extremo={<>
+          <SelectorIdioma idioma={idioma} alCambiar={ponIdioma} />
+          <InterruptorTema tema={tema} alCambiar={ponTema} />
+        </>} />
 
       <nav id="esquinas">
         {modales && (
           <button className={`dock ar${modales.contenedor.grave ? ' aviso-grave' : ''}`}
             onClick={() => alternaModal('contenedor')}>
-            Contenedor <span className="cuenta">{modales.contenedor.cuenta}</span>
+            {t.contenedor} <span className="cuenta">{modales.contenedor.cuenta}</span>
           </button>
         )}
         {modales?.clinico && (
           <button className="dock ar2" onClick={() => alternaModal('clinico')}>
-            Clínico <span className="cuenta">{modales.clinico.cuenta}</span>
+            {t.clinico} <span className="cuenta">{modales.clinico.cuenta}</span>
           </button>
         )}
       </nav>
@@ -221,12 +259,7 @@ export function App() {
         <Procedencia caso={caso} huesoVisible={huesoVisible} alCambiarHueso={(si) => {
           visor?.enciendeHueso(si);
           setHuesoVisible(si);
-        }} numeracion={numeracion} alCambiarNumeracion={(si) => {
-          // Apagarla devuelve la arcada entera: una pieza aislada por una numeración que ya
-          // no se enseña sería un estado que la interfaz no explica.
-          if (!si) selecciona(null);
-          setNumeracion(si);
-        }} enciaVisible={enciaVisible || !numeracion} alCambiarEncia={setEnciaVisible}
+        }} enciaVisible={enciaVisible} alCambiarEncia={setEnciaVisible}
         raicesVisibles={raicesVisibles} alCambiarRaices={(si) => {
           visor?.enciendeRaices(si);
           setRaicesVisibles(si);
@@ -242,7 +275,7 @@ export function App() {
       )}
 
       {caso && (
-        <Ficha hayEtiquetas={caso.hayEtiquetas && numeracion} seleccion={seleccion} piezas={caso.piezas}
+        <Ficha hayEtiquetas={caso.hayEtiquetas} seleccion={seleccion} piezas={caso.piezas}
           segmentador={caso.segmentador}
           capa={caso.segmentaciones.find((s) => s.id === caso.etiquetas)?.capa ?? null}
           frontera={caso.frontera} margen={caso.margen}
@@ -250,8 +283,8 @@ export function App() {
       )}
 
       {caso && (
-        <Odontograma segmentadas={numeracion ? caso.segmentadas : []} piezas={caso.piezas}
-          frontera={numeracion ? caso.frontera : null}
+        <Odontograma segmentadas={caso.segmentadas} piezas={caso.piezas}
+          frontera={caso.frontera}
           seleccionada={seleccion.tipo === 'pieza' ? seleccion.fdi : null}
           alPulsar={(fdi) => {
             // Volver a pulsar la misma casilla devuelve la arcada entera.
@@ -281,6 +314,6 @@ export function App() {
       )}
 
       <div id="aviso" className={aviso.visible ? 'visible' : ''}>{aviso.texto}</div>
-    </>
+    </ProveedorIdioma>
   );
 }
