@@ -24,6 +24,11 @@
 
 import {
   AdditiveBlending,
+  CustomBlending,
+  OneFactor,
+  OneMinusSrcColorFactor,
+  ZeroFactor,
+  type Matrix4,
   Box3,
   Color,
   BufferAttribute,
@@ -119,6 +124,37 @@ export const UMBRAL_ALFA = 8 / 255;
 const TAMANO_POR_ESPACIADO = 1.1;
 /** Cuántos puntos se muestrean para medir el espaciado. Bastan pocos: es una mediana. */
 const MUESTRA_ESPACIADO = 1500;
+
+/**
+ * Cómo se compone el campo de DENSIDAD sobre el fondo. Las dos son conmutativas, y por eso
+ * ninguna necesita ordenar: es la decisión de siempre, en sus dos lecturas físicas.
+ *
+ * - `emision`, sobre fondo oscuro: cada gaussiana SUMA luz (`dst + src`). Es el campo visto
+ *   como algo que brilla en proporción a su densidad.
+ * - `absorcion`, sobre fondo claro: cada gaussiana MULTIPLICA lo que hay detrás por
+ *   `1 − src` (`dst · (1 − src)`). Es Beer-Lambert en forma de producto —la transmitancia
+ *   de un rayo que atraviesa el campo—, que es justo lo que hace una radiografía. Sumar luz
+ *   sobre beige no se vería: lo que se ve sobre claro es lo que se resta.
+ *
+ * ⚠️ El tono de cada modo es FALSO COLOR igual que antes: no significa tejido.
+ */
+export type Composicion = 'emision' | 'absorcion';
+
+function aplicaComposicion(m: ShaderMaterial, modo: Composicion): void {
+  if (modo === 'emision') {
+    m.blending = AdditiveBlending;
+  } else {
+    m.blending = CustomBlending;
+    m.blendSrc = ZeroFactor;
+    m.blendDst = OneMinusSrcColorFactor;
+    // ⚠️ El ALFA del lienzo se conserva. Sin esto el mismo factor se aplica al alfa
+    // (`dstA · (1 − srcA)` con `srcA = 1`), el lienzo queda transparente justo donde hay
+    // hueso y se ve la página a través: el hueso salía como contornos blancos.
+    m.blendSrcAlpha = ZeroFactor;
+    m.blendDstAlpha = OneFactor;
+  }
+  m.needsUpdate = true;
+}
 
 const VERTEX = /* glsl */ `
   attribute float sigma;
@@ -370,9 +406,18 @@ export class Splats {
       origen?: [number, number, number];
       medida?: boolean;
       nota?: string;
+      /**
+       * Lleva el campo de su marco al canónico. Sale de las registraciones que DECLARA el
+       * manifiesto (ver `Marcos.ts`); sin ella el campo se dibuja en sus coordenadas.
+       */
+      matriz?: Matrix4;
+      /** Ganancia de display de ESTA capa. Por defecto `GANANCIA_DISPLAY`. */
+      ganancia?: number;
+      composicion?: Composicion;
     } = {},
   ): void {
-    const { origen, medida = false, nota = '' } = opciones;
+    const { origen, medida = false, nota = '', matriz, ganancia = GANANCIA_DISPLAY,
+      composicion = 'emision' } = opciones;
     const { x, y, z, density } = campo.columnas;
     if (!x || !y || !z || !density) {
       throw new Error(
@@ -410,7 +455,7 @@ export class Splats {
       new ShaderMaterial({
         uniforms: {
           tono: { value: tono },
-          ganancia: { value: GANANCIA_DISPLAY },
+          ganancia: { value: ganancia },
           // Lo pone `sincroniza` en cada fotograma: depende del alto del lienzo y del
           // `fov`, y los dos cambian —al redimensionar y al aplicar una vista guardada—.
           escala: { value: 1000.0 },
@@ -426,6 +471,16 @@ export class Splats {
         depthWrite: false,
       }),
     );
+    aplicaComposicion(puntos.material as ShaderMaterial, composicion);
+    if (matriz) {
+      // La matriz es exacta y rígida: se usa tal cual, sin descomponerla en posición y
+      // giro y volver a componerla, que es donde se cuelan los errores de redondeo.
+      puntos.matrixAutoUpdate = false;
+      puntos.matrix.copy(matriz);
+    }
+    // Antes que la apariencia: así los splats de las coronas, que sí ocluyen, se componen
+    // ENCIMA del campo translúcido en vez de quedar lavados por él.
+    puntos.renderOrder = -1;
     puntos.visible = false;
     puntos.frustumCulled = false;
     this.scene.add(puntos);
@@ -594,7 +649,7 @@ export class Splats {
     if (!p) return null;
     const caja = new Box3().setFromBufferAttribute(
       p.geometry.getAttribute('position') as BufferAttribute,
-    );
+    ).applyMatrix4(p.matrix);
     return caja.isEmpty() ? null : caja;
   }
 
@@ -784,6 +839,20 @@ export class Splats {
     for (const p of this.nubes.values()) {
       const u = (p.material as ShaderMaterial).uniforms['ganancia'];
       if (u) u.value = g;
+    }
+  }
+
+  /**
+   * Cambia la composición y el falso color de las capas de DENSIDAD. Lo llama el tema:
+   * emisión sobre oscuro, absorción sobre claro. La apariencia no se toca.
+   */
+  ponComposicion(modo: Composicion, tono: [number, number, number], id?: string): void {
+    for (const [i, p] of this.nubes) {
+      if (id !== undefined && i !== id) continue;
+      if (this.capas.find((c) => c.id === i)?.apariencia) continue;
+      const m = p.material as ShaderMaterial;
+      aplicaComposicion(m, modo);
+      m.uniforms['tono']!.value = tono;
     }
   }
 

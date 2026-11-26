@@ -68,6 +68,7 @@ demás está por hacer y aquí queda escrito cuál es cuál, para que nadie lo d
 | Verificación `sha256` por asset, a petición | **sí** |
 | Sacar un asset al disco, verificando el hash antes (§8: export ⇒ obligatoria) | **sí** |
 | Grafo de marcos: los que no conectan con el canónico se declaran | **sí** |
+| Colocar una capa en el canónico con las registraciones declaradas | **sí**, el campo CBCT (`Marcos.ts`) |
 | Vistas guardadas (§7): aplicar una a la cámara | **sí** |
 | Assets-directorio (serie DICOM): un corte suelto por rango | **sí** |
 | Sidecar del volumen (§5.2), sin parser DICOM en el cliente | **se lee** |
@@ -169,6 +170,39 @@ de OTRA fila, no el hueco real de 1,35 mm.
 volumen translúcido no tiene solución exacta con dos pasadas independientes. Cuando llegue
 el paso 2, la política de v1 será GS encima con opacidad global, y en vistas con volumen
 activo el GS en modo *shell* con opacidad ≤ 0,5. Documentado, no escondido.
+
+## Apariencia del render
+
+Cambia el aspecto, no el método: siguen siendo los splats 3DGS de la apariencia y el campo
+gaussiano del CBCT. No hay mallas sólidas.
+
+- **Fondo**: casi negro en modo oscuro y beige en claro, con un degradado radial suave
+  (`Escena.ponFondo`). Es la «luz suave», y no ilumina nada: los splats no se sombrean, y
+  el relieve sigue siendo el n·v del armónico de grado 1 que escribe el emisor. Por eso lo
+  único que se puede suavizar sin tocar el color del paciente es el fondo.
+- **Coronas**: **el color real de la apariencia 3DGS** (`f_dc`, albedo), que es lo que el
+  contenedor trae. El tema no lo toca. El falso color por FDI (`Derivados.colorDe`) no se
+  usa para pintar.
+- **Hueso y raíces**: el campo **medido** del CBCT (perfil de gemelo, sin la columna
+  `source_modality` del compuesto), en gris translúcido. Es tejido duro por encima del
+  umbral del emisor, **no una segmentación de hueso**, y el panel lo dice. Se coloca con
+  las registraciones que **declara** el manifiesto, compuestas hasta el marco canónico. Si
+  no hay camino, la capa no se dibuja, porque colocarla a ojo sería inventar un
+  alineamiento. Sale encendido salvo que la cadena sea *provisional* (§6). Si está *sin
+  verificar*, se enciende igualmente y se dice al lado.
+  - En oscuro **emite**: se suma (`dst + src`).
+  - En claro **absorbe**: se multiplica (`dst · (1 − src)`). Es Beer-Lambert en forma de
+    producto, como una radiografía.
+  - Las dos composiciones son conmutativas, así que la decisión de no ordenar se mantiene.
+- **Conductos nerviosos**: amarillo reservado. **Ningún contenedor trae hoy esa capa**, y el
+  visor (Layer 1) no la infiere. El panel lo dice en vez de callarlo. Dibujarla exige que
+  el emisor la escriba primero.
+
+El panel **«Qué se ve»** existe por una diferencia de procedencia que la imagen sola no
+dice. Un render dental puede ser anatomía de referencia (un CBCT de otra persona ajustado a
+una radiografía) y verse igual de convincente. Aquí las coronas son el escaneo intraoral de
+este paciente, numeradas por un modelo (Capa 3), y el hueso y las raíces son su CBCT. El
+panel se construye con lo que de verdad se dibuja.
 
 ## Tests
 

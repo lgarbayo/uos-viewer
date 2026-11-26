@@ -20,7 +20,8 @@ import { leePly } from '../uos/Ply';
 import { campoDesdeSplats, plyDesdeCampo } from '../uos/SplatsKhr';
 import { Apariencia, UMBRAL_ALFA_255 } from './Apariencia';
 import { Escena } from './Escena';
-import { Splats } from './Splats';
+import { colocaEnCanonico, type Colocacion } from './Marcos';
+import { Splats, type Composicion } from './Splats';
 
 /**
  * Una columna del campo, tal y como la declara el sidecar.
@@ -58,16 +59,75 @@ const TONOS: Record<string, [number, number, number]> = {
 const PERFILES_DENSIDAD = ['ash-twin/1.0', 'histora-twin/1.0', 'histora-twin-fitted/1.0'];
 const PERFILES_APARIENCIA = ['ash-gs-apariencia/1.0', 'histora-gs-appearance/1.0'];
 
+export type Tema = 'claro' | 'oscuro';
+
 /**
- * El fondo del lienzo en cada tema. Casi negro en oscuro: es lo que deja leer una
- * superficie translúcida, y el negro puro la recorta demasiado.
+ * La apariencia del render en cada tema. SÓLO display: nada de esto viaja al `.uos`.
+ *
+ * - **Fondo**: casi negro en oscuro, beige en claro, con la luz suave en el centro (ver
+ *   `Escena.ponFondo`). Casi negro y no negro: el negro puro recorta lo translúcido.
+ * - **Hueso**: gris translúcido, como de cristal. En oscuro, EMITE (se suma); en claro,
+ *   ABSORBE (multiplica). Ver `Composicion`. El gris es falso color: el CBCT no trae color.
+ * - **Coronas**: no aparecen aquí a propósito. Son el color de la apariencia 3DGS, el del
+ *   propio contenedor, y el tema no lo toca.
  */
-export const FONDO_3D = { oscuro: 0x050608, claro: 0xe9e3d6 } as const;
+export const TEMA_3D: Record<Tema, {
+  readonly centro: number;
+  readonly borde: number;
+  readonly hueso: Composicion;
+  readonly tonoHueso: [number, number, number];
+}> = {
+  oscuro: { centro: 0x16191d, borde: 0x040506, hueso: 'emision', tonoHueso: [0.62, 0.66, 0.70] },
+  claro: { centro: 0xf5f0e6, borde: 0xdcd4c3, hueso: 'absorcion', tonoHueso: [0.50, 0.50, 0.48] },
+};
+
+/**
+ * Ganancia de display del hueso. Más baja que la del resto del campo a propósito: el
+ * cristal se lee por lo que deja ver a través, y con la ganancia por defecto el tejido
+ * denso satura y tapa las raíces.
+ */
+const GANANCIA_HUESO = 0.05;
+
+/** Lo que la interfaz necesita para decir qué es la capa de hueso y cómo se colocó. */
+export interface InfoHueso {
+  readonly id: string;
+  readonly rol: string;
+  readonly medida: boolean;
+  readonly marco: string;
+  readonly colocacion: Colocacion;
+  readonly dibujadas: number;
+  readonly total: number;
+}
+
+/** Lo que declara de sí misma la capa de apariencia que se dibuja. */
+export interface InfoApariencia {
+  readonly id: string;
+  readonly rol: string;
+  readonly medida: boolean;
+  readonly nota: string;
+}
+
+/**
+ * Si una capa de densidad es la que se enseña como hueso.
+ *
+ * Es el campo MEDIDO del CBCT: perfil de gemelo (no el ajustado, cuyas escalas son un
+ * ajuste y no una medida) y sin columna `source_modality`, que es la marca del compuesto
+ * CBCT + escáner —en ese, la encía viaja con densidad 0 y no es hueso—. Lo que se dibuja
+ * es TEJIDO DURO por encima del umbral del emisor: hueso y raíces, y también coronas. No
+ * es una segmentación de hueso, y la interfaz no lo llama así sin decirlo.
+ */
+function esCampoDeHueso(d: DescriptorGS): boolean {
+  return (d.profile === 'ash-twin/1.0' || d.profile === 'histora-twin/1.0')
+    && d.measured === true
+    && !d.columns?.some((c) => c.name === 'source_modality');
+}
 
 /** Lo que una carga deja dicho para la interfaz. */
 export interface ResultadoCapas {
   readonly avisos: string[];
   readonly region: ColumnaGS | null;
+  readonly apariencia: InfoApariencia | null;
+  readonly hueso: InfoHueso | null;
 }
 
 /** Se lanza cuando el visor se desmontó con una carga en vuelo. No es un fallo del `.uos`. */
@@ -94,6 +154,8 @@ export class Visor {
    */
   readonly apariencia = new Apariencia();
   private fotograma = 0;
+  private tema: Tema = 'oscuro';
+  private huesoId: string | null = null;
   private liberado = false;
   /** Cada apertura incrementa esto; una carga vieja que despierte ve que ya no es la suya. */
   private generacion = 0;
@@ -140,6 +202,7 @@ export class Visor {
   /** Deja la escena vacía para abrir otro contenedor. */
   async vacia(): Promise<void> {
     this.generacion++;
+    this.huesoId = null;
     this.splats.limpia();
     await this.apariencia.limpia();
   }
@@ -165,6 +228,8 @@ export class Visor {
     const gen = this.generacion;
     const avisos: string[] = [];
     let region: ColumnaGS | null = null;
+    let apariencia: InfoApariencia | null = null;
+    let hueso: InfoHueso | null = null;
 
     let deGlb = false;
     for (const escena of uos.de('mesh_gs_scene').filter(
@@ -177,6 +242,8 @@ export class Visor {
           // `region_id` es inferencia con vocabulario ISO-3950. Eso lo dice el sidecar.
           const d = await uos.sidecar<DescriptorGS>(escena);
           region ??= d?.columns?.find((c) => c.name === 'region_id') ?? null;
+          apariencia ??= { id: escena.id, rol: d?.role ?? 'apariencia (KHR_gaussian_splatting)',
+            medida: d?.measured === true, nota: d?.note ?? '' };
           let campo = campoDesdeSplats(malla.splats);
           const inferred = await leeEtiquetas(uos, escena, campo.n, malla.splats.posiciones);
           this.sigueSiendo(gen);
@@ -236,6 +303,8 @@ export class Visor {
           // `region_id` es inferencia y no medida.
           region ??= d.columns?.find((c) => c.name === 'region_id') ?? null;
           if (deGlb) continue;
+          apariencia ??= { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
+            nota: d.note ?? '' };
           await this.apariencia.añade(a.id, plyDesdeCampo(campo), UMBRAL_ALFA_255);
           this.sigueSiendo(gen);
           this.splats.añadeApariencia(a.id, d.role ?? a.id, campo, {
@@ -247,11 +316,37 @@ export class Visor {
             soloSeleccion: true,
           });
         } else {
-          this.splats.añade(a.id, d.role ?? a.id, campo, TONOS[a.id] ?? [0.8, 0.8, 0.8], {
-            origen,
-            medida: d.measured === true,
-            nota: d.note ?? '',
-          });
+          // ⚠️ **El campo se coloca con las registraciones DECLARADAS, o no se coloca.** Viaja
+          // en el marco del CBCT y la apariencia en el del escáner: sin la matriz del
+          // manifiesto el hueso aparece a centímetros de los dientes. El marco que declara
+          // el asset manda sobre el comentario `origin` del PLY, que era el apaño de antes.
+          const colocacion = colocaEnCanonico(uos.manifiesto, a.frame);
+          if (!colocacion) {
+            avisos.push(`${a.id}: su marco \`${a.frame}\` no conecta con el canónico por ` +
+              'ninguna registración declarada. No se dibuja: colocarlo a ojo sería inventar ' +
+              'un alineamiento.');
+            continue;
+          }
+          const esHueso = hueso === null && esCampoDeHueso(d);
+          const tema = TEMA_3D[this.tema];
+          this.splats.añade(a.id, d.role ?? a.id, campo,
+            esHueso ? tema.tonoHueso : TONOS[a.id] ?? [0.8, 0.8, 0.8], {
+              origen: a.frame === uos.manifiesto.canonical_frame.id ? origen : undefined,
+              matriz: colocacion.matriz,
+              medida: d.measured === true,
+              nota: d.note ?? '',
+              ganancia: esHueso ? GANANCIA_HUESO : undefined,
+              composicion: esHueso ? tema.hueso : 'emision',
+            });
+          if (esHueso) {
+            const capa = this.splats.capas.find((c) => c.id === a.id)!;
+            hueso = { id: a.id, rol: d.role ?? a.id, medida: d.measured === true,
+              marco: a.frame, colocacion, dibujadas: capa.dibujadas, total: capa.n };
+            // Opción A, decidida: encendido salvo que la colocación sea PROVISIONAL (§6:
+            // automática y sin firmar). Sin verificar sí se enciende, y se dice al lado.
+            this.splats.enciende(a.id, !colocacion.provisional);
+            this.huesoId = a.id;
+          }
         }
       } catch (e) {
         if (e instanceof VisorLiberado) throw e;
@@ -263,12 +358,20 @@ export class Visor {
     // `.uos` sin apariencia no lo llega a instanciar.
     const gs = this.apariencia.grupo;
     if (gs && gs.parent !== this.escena.scene) this.escena.scene.add(gs);
-    return { avisos, region };
+    return { avisos, region, apariencia, hueso };
   }
 
   /** El tema de la interfaz llega también a la escena: el fondo 3D cambia con él. */
-  ponTema(tema: 'claro' | 'oscuro'): void {
-    this.escena.ponFondo(FONDO_3D[tema]);
+  ponTema(tema: Tema): void {
+    this.tema = tema;
+    const t = TEMA_3D[tema];
+    this.escena.ponFondo(t.centro, t.borde);
+    if (this.huesoId) this.splats.ponComposicion(t.hueso, t.tonoHueso, this.huesoId);
+  }
+
+  /** Enciende o apaga la capa de hueso. */
+  enciendeHueso(si: boolean): void {
+    if (this.huesoId) this.splats.enciende(this.huesoId, si);
   }
 
   /** Encuadra sobre la apariencia, o sobre la primera capa si no la hay. */

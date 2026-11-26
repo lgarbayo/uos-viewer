@@ -13,7 +13,7 @@ import { leeClinico, porPieza } from '../uos/Clinico';
 import type { Manifiesto } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader, type Reparo } from '../uos/UosLoader';
-import type { Visor } from './Visor';
+import type { InfoApariencia, InfoHueso, Visor } from './Visor';
 
 export interface VistaJSON {
   id: string;
@@ -51,6 +51,10 @@ export interface Caso {
   readonly segmentador: string;
   readonly hayEtiquetas: boolean;
   readonly fidelidad: readonly FidelidadAsset[] | null;
+  /** La capa de apariencia que se dibuja, con lo que su sidecar dice de ella. */
+  readonly apariencia: InfoApariencia | null;
+  /** El campo del CBCT que se dibuja como hueso, y con qué registraciones se colocó. */
+  readonly hueso: InfoHueso | null;
 }
 
 export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
@@ -61,7 +65,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   // ⚠️ **Las capas GAUSSIANAS son lo único que se dibuja, y son EL MODELO.** El contenedor
   // lleva sólo el campo gaussiano y el manifiesto —el escaneo original viaja fuera,
   // nombrado por su sha256—, así que no hay malla que enseñar mientras.
-  const { avisos, region } = await visor.carga(uos);
+  const { avisos, region, apariencia, hueso } = await visor.carga(uos);
 
   if (vistas[0]) visor.escena.aplicaVista(vistas[0].camera);
   else visor.encuadra();
@@ -136,5 +140,7 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     segmentador: region?.derived_from ?? '',
     hayEtiquetas: visor.splats.hayFdi,
     fidelidad,
+    apariencia,
+    hueso,
   };
 }
