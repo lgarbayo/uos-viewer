@@ -10,6 +10,7 @@
 import { useLayoutEffect, useRef } from 'react';
 
 import { aCss, type Pieza } from '../../uos/Clinico';
+import type { Caso } from '../Caso';
 
 const ARCADAS: readonly (readonly [string, readonly number[]])[] = [
   ['superior · derecha del paciente → izquierda',
@@ -21,11 +22,12 @@ const ARCADAS: readonly (readonly [string, readonly number[]])[] = [
 interface Props {
   readonly segmentadas: readonly number[];
   readonly piezas: ReadonlyMap<string, Pieza>;
+  readonly frontera: Caso['frontera'];
   readonly seleccionada: number | null;
   readonly alPulsar: (fdi: number) => void;
 }
 
-export function Odontograma({ segmentadas, piezas, seleccionada, alPulsar }: Props) {
+export function Odontograma({ segmentadas, piezas, frontera, seleccionada, alPulsar }: Props) {
   const raiz = useRef<HTMLDivElement>(null);
   const hay = new Set(segmentadas);
 
@@ -59,6 +61,8 @@ export function Odontograma({ segmentadas, piezas, seleccionada, alPulsar }: Pro
             <div className="dientes">{fdis.map((fdi) => {
               const p = piezas.get(String(fdi));
               const esta = hay.has(fdi);
+              const recorte = frontera?.piezas.get(fdi);
+              const dudoso = esta && recorte !== undefined && !recorte.within_expert_range;
               return (
                 <button key={fdi} className="diente" data-fdi={fdi} data-hay={esta ? 'si' : 'no'}
                   aria-pressed={seleccionada === fdi} disabled={!esta}
@@ -73,6 +77,9 @@ export function Odontograma({ segmentadas, piezas, seleccionada, alPulsar }: Pro
                     {p?.findings.length
                       ? <span className="hall" title={p.findings.join(', ')}>●</span>
                       : p ? '·' : ''}
+                    {dudoso && <span className="recorte" title={
+                      `recorte fuera del rango de experto: ${recorte.mesiodistal_mm.toFixed(1)} mm ` +
+                      `frente a ${recorte.table_mm.toFixed(1)} de tabla`}>!</span>}
                   </span>
                 </button>
               );
@@ -85,6 +92,8 @@ export function Odontograma({ segmentadas, piezas, seleccionada, alPulsar }: Pro
           <p className="nota">En gris: sin color declarado — ahí el campo pinta el degradado de
             respaldo, que no es color del paciente.</p>
           <p className="nota">● hallazgo en el informe</p>
+          {frontera && <p className="nota"><span className="recorte">!</span> recorte fuera del
+            rango de experto · <span className="l3">Capa 3</span></p>}
         </div>
       </div>
     </div>

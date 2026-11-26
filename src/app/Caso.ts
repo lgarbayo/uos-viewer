@@ -13,6 +13,7 @@ import { leeClinico, porPieza } from '../uos/Clinico';
 import type { Manifiesto } from '../uos/Manifest';
 import { BlobReader } from '../uos/Reader';
 import { UosLoader, type Reparo } from '../uos/UosLoader';
+import { leeSegmentaciones, type Margen, type FronteraPieza, type Segmentacion } from './Segmentacion';
 import type { InfoApariencia, InfoHueso, Visor } from './Visor';
 
 export interface VistaJSON {
@@ -55,6 +56,12 @@ export interface Caso {
   readonly apariencia: InfoApariencia | null;
   /** El campo del CBCT que se dibuja como hueso, y con qué registraciones se colocó. */
   readonly hueso: InfoHueso | null;
+  /** Lo que declara cada segmentación de `derived/`. Ver `Segmentacion.ts`. */
+  readonly segmentaciones: readonly Segmentacion[];
+  /** De qué segmentación sale el criterio de frontera por pieza, si alguna lo declara. */
+  readonly frontera: { readonly id: string; readonly piezas: ReadonlyMap<number, FronteraPieza> } | null;
+  /** De qué segmentación sale el margen gingival, si alguna lo ejecutó. */
+  readonly margen: { readonly id: string; readonly margen: Margen } | null;
 }
 
 export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
@@ -113,6 +120,15 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     }
   }
 
+  let segmentaciones: Segmentacion[] = [];
+  try {
+    segmentaciones = await leeSegmentaciones(uos);
+  } catch (e) {
+    reparos.push({ grave: false, texto: `Sidecar de segmentación no interpretable: ${String(e)}` });
+  }
+  const conFrontera = segmentaciones.find((s) => s.frontera);
+  const conMargen = segmentaciones.find((s) => s.margen);
+
   const vistaDePieza = new Map<number, VistaJSON>();
   for (const v of vistas) {
     const n = /^view\.pieza_(\d+)$/.exec(v.id);
@@ -142,5 +158,8 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     fidelidad,
     apariencia,
     hueso,
+    segmentaciones,
+    frontera: conFrontera?.frontera ? { id: conFrontera.id, piezas: conFrontera.frontera } : null,
+    margen: conMargen?.margen ? { id: conMargen.id, margen: conMargen.margen } : null,
   };
 }

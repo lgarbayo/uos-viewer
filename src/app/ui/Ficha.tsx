@@ -7,6 +7,9 @@
  */
 
 import { fichaDe, type Pieza } from '../../uos/Clinico';
+import { avisoDeFrontera, type MetaSegmentacion } from '../../uos/Derivados';
+import type { Caso } from '../Caso';
+import { margenDePieza } from '../Segmentacion';
 
 export type Seleccion =
   | { readonly tipo: 'ninguna' }
@@ -19,10 +22,12 @@ interface Props {
   readonly seleccion: Seleccion;
   readonly piezas: ReadonlyMap<string, Pieza>;
   readonly segmentador: string;
+  readonly frontera: Caso['frontera'];
+  readonly margen: Caso['margen'];
   readonly alCerrar: () => void;
 }
 
-export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, alCerrar }: Props) {
+export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, frontera, margen, alCerrar }: Props) {
   // `#ficha:not(:empty)` es lo que le pone la caja: sin etiquetas no hay nada que decir.
   if (!hayEtiquetas) return <div id="ficha" />;
   if (seleccion.tipo === 'ninguna') {
@@ -39,6 +44,14 @@ export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, alCerrar }
   // ⚠️ **Una pieza sin ficha clínica tiene que decirlo igual**, o no se distingue de «el
   // clic no ha acertado nada». El código FDI va siempre, venga o no con texto.
   const p = piezas.get(String(fdi));
+  // ⚠️ **Lo que dice la segmentación de ESTA pieza, al lado de lo que dice el informe.** Sin
+  // el aviso de frontera, el visor enciende una corona que arrastra medio diente vecino y
+  // lo que se lee al lado —color, hallazgos— es correcto: quien mira concluye que la
+  // geometría también. `avisoDeFrontera` es la regla del lector, la misma que tiene tests.
+  const aviso = frontera ? avisoDeFrontera({ per_tooth_boundary: {
+    criterion: '', note: '', teeth: Object.fromEntries(frontera.piezas) },
+  } as unknown as MetaSegmentacion, fdi) : '';
+  const lineaMargen = margen ? margenDePieza(margen.margen, fdi) : null;
   return (
     <div id="ficha">
       <button id="quita-pieza" className="cerrar" title="ver la arcada entera"
@@ -49,6 +62,8 @@ export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, alCerrar }
         // tal cual, exactamente como lo hacía el `innerHTML` de antes de React.
         ? <div dangerouslySetInnerHTML={{ __html: fichaDe(fdi, p, true) }} />
         : <p className="nota">el informe no dice nada de esta pieza</p>}
+      {aviso && <p className="aviso-frontera">{aviso}</p>}
+      {lineaMargen && <p className="nota">{lineaMargen} · <code>{margen!.id}</code></p>}
       <p className="nota">segmentada por {segmentador || '—'} · <span className="l3">Layer 3</span></p>
     </div>
   );

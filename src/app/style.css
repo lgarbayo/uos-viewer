@@ -513,3 +513,14 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
 .muestra-capa.corona { background: var(--capa-corona); }
 .muestra-capa.hueso { background: var(--capa-hueso); }
 .muestra-capa.conducto { background: var(--conducto); opacity: .3; }
+
+/* --- inferencia (derived/) ------------------------------------------------ */
+.rejilla-seg { display: grid; gap: .45rem; margin-top: .4rem;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); }
+.asset.seg dl { grid-template-columns: 5.2rem minmax(0, 1fr); font-size: .82em; margin-top: .3rem; }
+.asset.seg dd { min-width: 0; overflow-wrap: anywhere; }
+/* El aviso de un recorte que no es de fiar: en la ficha y como marca en el odontograma. */
+.aviso-frontera { color: var(--aviso); font-size: .8rem; margin: .4rem 0 .2rem;
+  padding-left: .5rem; border-left: 2px solid var(--aviso); }
+.diente .marcas .recorte, .leyenda .recorte { color: var(--aviso); font-weight: 700;
+  margin-left: .15rem; }
