@@ -28,6 +28,9 @@ export function Procedencia({
   const reg = hueso?.colocacion;
   // El régimen de las etiquetas lo dice SU sidecar, no el visor.
   const seg = caso.segmentaciones.find((s) => s.id === caso.etiquetas);
+  const numeradoPorMalla = escaner?.numeracion.usada?.via === 'malla'
+    ? escaner.numeracion.usada : null;
+  const delCompuesto = escaner?.numeracion.delCompuesto ?? null;
   return (
     <aside id="procedencia" aria-label="Qué se ve y de dónde sale">
       <h3>Qué se ve</h3>
@@ -59,11 +62,14 @@ export function Procedencia({
                     no se dibuja</>
                   : <>sin relieve: {escaner.relieve.sinRelieve}</>}
               </div>
-              {escaner.numeracion && escaner.numeracion.escaner === 0 && (
+              {!escaner.numeracion.usada && (
                 <div className="nota sinver">
-                  sin numeración en las coronas: <code>{escaner.numeracion.id}</code> numera{' '}
-                  {escaner.numeracion.resto.toLocaleString('es')} gaussianas del CBCT y ninguna
-                  del escáner
+                  sin numeración en las coronas:{' '}
+                  {escaner.numeracion.motivo
+                    ?? (escaner.numeracion.delCompuesto
+                      ? <>{escaner.numeracion.delCompuesto.id} no numera ninguna gaussiana
+                        del escáner</>
+                      : 'ningún derived_seg las numera')}
                 </div>
               )}
             </div>
@@ -92,7 +98,20 @@ export function Procedencia({
               {caso.etiquetas && <> · <code>{caso.etiquetas}</code></>} ·{' '}
               <span className="l3">Capa {seg?.capa ?? 3}</span>
               {seg?.estado && <> · {seg.estado}</>}
+              {/* El hash va TAL COMO VIENE: si el emisor declara uno equivocado, el visor no
+                  lo corrige ni lo esconde. */}
+              {seg?.pesos && <> · pesos <code title={seg.pesos}>{seg.pesos.slice(0, 12)}…</code></>}
             </div>
+            {numeradoPorMalla && (
+              <div className="nota">
+                unida por los vértices de <code>{numeradoPorMalla.malla}</code>, que caen uno a
+                uno sobre las gaussianas del escáner
+                {delCompuesto && delCompuesto.escaner === 0 && <>
+                  {' '}(<code>{delCompuesto.id}</code> numera{' '}
+                  {delCompuesto.resto.toLocaleString('es')} gaussianas del CBCT y ninguna del
+                  escáner)</>}
+              </div>
+            )}
           </li>
         )}
         {hueso && reg && (

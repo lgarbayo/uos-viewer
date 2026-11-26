@@ -21,7 +21,8 @@ import { campoDesdeSplats, plyDesdeCampo } from '../uos/SplatsKhr';
 import { Apariencia, UMBRAL_ALFA_255 } from './Apariencia';
 import { Escena } from './Escena';
 import {
-  campoDelEscaner, cuentaConPieza, indicesDelEscaner, leeNormalesGlb, motivoSinNormales, posicionesEnCanonico,
+  campoDelEscaner, cuentaConPieza, indicesDelEscaner, leeNormalesGlb, motivoSinCorrespondencia,
+  motivoSinNormales, posicionesEnCanonico,
 } from './Escaner';
 import { colocaEnCanonico, type Colocacion } from './Marcos';
 import { Splats, type Composicion } from './Splats';
@@ -140,16 +141,40 @@ export interface InfoEscaner {
   readonly espaciado: number;
   readonly infladas: number;
   readonly sigmaMinima: number;
-  /**
-   * La numeración del compuesto, contada sobre lo que dice su `derived_seg`: cuántas
-   * gaussianas del ESCÁNER tienen pieza y cuántas del resto (el CBCT). `null` si el
-   * compuesto no trae numeración.
-   */
-  readonly numeracion: {
+  /** Lo que numera las coronas, y lo que dice de ellas el `derived_seg` del compuesto. */
+  readonly numeracion: NumeracionEscaner;
+}
+
+/**
+ * De dónde sale la numeración FDI de las coronas pintadas desde el escáner.
+ *
+ * ⚠️ **Por orden, y decidido por el responsable:** primero el `derived_seg` del compuesto,
+ * si numera alguna gaussiana del escáner; si no, el de la malla del escáner, unido por la
+ * correspondencia uno a uno MEDIDA entre sus vértices y esas gaussianas. El visor no infiere
+ * nada: sólo une un código que el contenedor ya trae.
+ */
+export interface NumeracionEscaner {
+  /** Lo que el `derived_seg` del compuesto numera, contado por modalidad, o `null`. */
+  readonly delCompuesto: {
     readonly id: string;
+    /** Gaussianas del ESCÁNER con pieza. */
     readonly escaner: number;
+    /** Gaussianas del resto del compuesto (el CBCT) con pieza. */
     readonly resto: number;
   } | null;
+  /** La numeración que se usa para seleccionar, o `null` si no hay ninguna utilizable. */
+  readonly usada: {
+    readonly id: string;
+    readonly modelo: string | null;
+    readonly vocabulario: string | null;
+    /** `compuesto`: indexa el compuesto. `malla`: indexa los vértices de `malla`. */
+    readonly via: 'compuesto' | 'malla';
+    readonly malla: string | null;
+    /** Gaussianas del escáner con pieza. */
+    readonly conPieza: number;
+  } | null;
+  /** Por qué no se pudo usar la de la malla, si se intentó. */
+  readonly motivo: string | null;
 }
 
 /** El compuesto CBCT + escáner, guardado durante la carga por si hace falta para las coronas. */
@@ -158,7 +183,8 @@ interface Compuesto {
   readonly campo: CampoPly;
   readonly colocacion: Colocacion;
   /** El `derived_seg` que lo numera, si alguno. */
-  readonly etiquetas: { readonly id: string; readonly modelo: string | null } | null;
+  readonly etiquetas: { readonly id: string; readonly modelo: string | null;
+    readonly vocabulario: string | null } | null;
 }
 
 /** Lo que una carga deja dicho para la interfaz. */
@@ -377,7 +403,8 @@ export class Visor {
           }
           if (compuesto === null && d.columns?.some((c) => c.name === 'source_modality')) {
             compuesto = { id: a.id, campo, colocacion, etiquetas: inferred
-              ? { id: inferred.asset.id, modelo: inferred.meta.model?.name ?? null } : null };
+              ? { id: inferred.asset.id, modelo: inferred.meta.model?.name ?? null,
+                vocabulario: inferred.meta.encoding?.vocabulary ?? null } : null };
           }
           const esHueso = hueso === null && esCampoDeHueso(d);
           const tema = TEMA_3D[this.tema];
@@ -413,19 +440,16 @@ export class Visor {
     if (apariencia === null && compuesto !== null) {
       try {
         escaner = await this.pintaEscaner(uos, compuesto, gen);
-        // ⚠️ Se cuenta, no se supone: un `derived_seg` del compuesto puede numerar sólo
-        // sus gaussianas de CBCT y dejar todas las del escáner a 0. Entonces no hay qué
-        // seleccionar en las coronas, y la interfaz lo dice en vez de ofrecerlo.
-        if (compuesto.etiquetas && escaner.numeracion?.escaner) {
-          etiquetas = compuesto.etiquetas.id;
+        const { usada, delCompuesto, motivo } = escaner.numeracion;
+        if (usada) {
+          etiquetas = usada.id;
           region = { name: 'region_id', measured: false,
-            derived_from: compuesto.etiquetas.modelo ?? compuesto.etiquetas.id,
-            vocabulary: 'ISO-3950 (FDI)' };
+            derived_from: usada.modelo ?? usada.id, vocabulary: usada.vocabulario };
           avisos.push('Selección dental basada en segmentación inferida; las fronteras requieren revisión.');
-        } else if (escaner.numeracion) {
-          avisos.push(`${escaner.numeracion.id}: no numera ninguna gaussiana del escáner del ` +
-            `compuesto (sí ${escaner.numeracion.resto.toLocaleString('es')} del CBCT); ` +
-            'las coronas no se pueden aislar.');
+        } else {
+          avisos.push('Las coronas del escáner no se pueden aislar: ' + (motivo
+            ?? (delCompuesto ? `${delCompuesto.id} no numera ninguna gaussiana del escáner`
+              : 'ningún `derived_seg` las numera')) + '.');
         }
       } catch (e) {
         if (e instanceof VisorLiberado) throw e;
@@ -456,10 +480,13 @@ export class Visor {
     const idx = indicesDelEscaner(campo);
     if (idx.length === 0) throw new Error('el compuesto no trae gaussianas con `source_modality = 1`');
 
-    // El relieve sale de las normales que DECLARA la malla del escáner, y sólo si sus
-    // vértices son estas mismas gaussianas. La malla no se dibuja.
+    // ⚠️ **La malla del escáner no se dibuja**, pero indexa dos cosas que sirven a estas
+    // gaussianas si, y sólo si, sus vértices SON ellas: sus normales (el relieve) y, si el
+    // compuesto no numera el escáner, su `derived_seg`. La correspondencia se mide aquí.
     let normales: Float32Array | null = null;
     let relieve: InfoEscaner['relieve'] = { sinRelieve: 'el contenedor no trae la malla del escáner' };
+    let posMalla: Float32Array | null = null;
+    let correspondencia: string | null = 'el contenedor no trae la malla del escáner';
     const canonico = uos.manifiesto.canonical_frame.id;
     const malla = uos.de('mesh_gs_scene').find((a) => !a.external
       && a.media_type === 'model/gltf-binary' && a.frame === canonico);
@@ -467,28 +494,66 @@ export class Visor {
       const bytes = await uos.bytes(malla);
       this.sigueSiendo(gen);
       const pos = posicionesEnCanonico(campo, idx, colocacion.matriz);
+      posMalla = leeGlb(bytes).posiciones;
+      correspondencia = motivoSinCorrespondencia(pos, posMalla);
       const leidas = leeNormalesGlb(bytes);
-      const motivo = motivoSinNormales(pos, leeGlb(bytes).posiciones, leidas);
-      if (motivo) relieve = { sinRelieve: motivo };
+      const sinNormales = motivoSinNormales(pos, posMalla, leidas);
+      if (sinNormales) relieve = { sinRelieve: sinNormales };
       else { normales = leidas; relieve = { de: malla.id }; }
     }
 
+    // La numeración: primero la del compuesto, contada por modalidad; si no numera el
+    // escáner, la de la malla, sólo con la correspondencia medida.
+    const region = campo.columnas['region_id'];
+    let delCompuesto: NumeracionEscaner['delCompuesto'] = null;
+    if (compuesto.etiquetas && region) {
+      const deEscaner = cuentaConPieza(region, idx);
+      delCompuesto = { id: compuesto.etiquetas.id, escaner: deEscaner,
+        resto: cuentaConPieza(region) - deEscaner };
+    }
+    let usada: NumeracionEscaner['usada'] = null;
+    let motivo: string | null = null;
+    let deMalla: Int16Array | null = null;
+    if (compuesto.etiquetas && delCompuesto && delCompuesto.escaner > 0) {
+      usada = { id: compuesto.etiquetas.id, modelo: compuesto.etiquetas.modelo,
+        vocabulario: compuesto.etiquetas.vocabulario, via: 'compuesto', malla: null,
+        conPieza: delCompuesto.escaner };
+    } else if (malla && posMalla && correspondencia === null) {
+      try {
+        // `leeEtiquetas` exige el mismo marco y los hashes, y comprueba el orden contra el
+        // sha de posiciones que declare el sidecar.
+        const r = await leeEtiquetas(uos, malla, posMalla.length / 3, posMalla);
+        this.sigueSiendo(gen);
+        if (!r) motivo = `ningún \`derived_seg\` numera \`${malla.id}\``;
+        else {
+          const conPieza = cuentaConPieza(Float32Array.from(r.labels));
+          if (conPieza === 0) motivo = `${r.asset.id} no numera ningún vértice`;
+          else {
+            deMalla = r.labels;
+            usada = { id: r.asset.id, modelo: r.meta.model?.name ?? null,
+              vocabulario: r.meta.encoding?.vocabulary ?? null, via: 'malla', malla: malla.id,
+              conPieza };
+          }
+        }
+      } catch (e) {
+        if (e instanceof VisorLiberado) throw e;
+        motivo = `la numeración de \`${malla.id}\` no se pudo unir: ` +
+          (e instanceof Error ? e.message : String(e));
+      }
+    } else if (correspondencia !== null) {
+      motivo = `la numeración de la malla no se puede unir: ${correspondencia}`;
+    }
+
     const { campo: escaner, espaciado, infladas, sigmaMinima } =
-      campoDelEscaner(campo, idx, colocacion.matriz, normales);
+      campoDelEscaner(campo, idx, colocacion.matriz, normales, deMalla);
     const capa = `${id}#escaner`;
     await this.apariencia.añade(capa, plyDesdeCampo(escaner), UMBRAL_ALFA_255);
     this.sigueSiendo(gen);
     this.splats.añadeApariencia(capa, 'escáner del compuesto', escaner, {
       medida: true, nota: 'forma medida del escáner; color de visualización', soloSeleccion: true,
     });
-    const region = campo.columnas['region_id'];
-    let numeracion: InfoEscaner['numeracion'] = null;
-    if (compuesto.etiquetas && region) {
-      const deEscaner = cuentaConPieza(region, idx);
-      numeracion = { id: compuesto.etiquetas.id, escaner: deEscaner,
-        resto: cuentaConPieza(region) - deEscaner };
-    }
-    return { id, n: idx.length, colocacion, relieve, espaciado, infladas, sigmaMinima, numeracion };
+    return { id, n: idx.length, colocacion, relieve, espaciado, infladas, sigmaMinima,
+      numeracion: { delCompuesto, usada, motivo } };
   }
 
   /** El tema de la interfaz llega también a la escena: el fondo 3D cambia con él. */

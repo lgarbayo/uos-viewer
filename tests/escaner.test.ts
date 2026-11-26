@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ESCALA_POR_ESPACIADO, MARFIL, OPACIDAD_ESCANER, RELIEVE, campoDelEscaner, cuentaConPieza,
   espaciadoMediano,
-  indicesDelEscaner, motivoSinNormales, posicionesEnCanonico,
+  indicesDelEscaner, motivoSinCorrespondencia, motivoSinNormales, posicionesEnCanonico,
 } from '../src/app/Escaner';
 import type { CampoPly } from '../src/uos/Ply';
 
@@ -96,6 +96,33 @@ describe('las gaussianas del escáner dentro del compuesto', () => {
         - x * e.columnas['f_rest_2']![0]!);
     expect(color(0, 0, -1)).toBeCloseTo(MARFIL[0], 5);              // de frente
     expect(color(1, 0, 0)).toBeCloseTo(MARFIL[0] * (1 - RELIEVE), 5); // rasante
+  });
+
+  it('las etiquetas de la malla, ya verificadas, sustituyen al region_id del compuesto', () => {
+    const c = compuesto();
+    const idx = indicesDelEscaner(c);
+    const { campo: e } = campoDelEscaner(c, idx, new Matrix4(), null, Int16Array.from([13, 23]));
+    expect(Array.from(e.columnas['region_id']!)).toEqual([13, 23]);
+    expect(() => campoDelEscaner(c, idx, new Matrix4(), null, Int16Array.from([13])))
+      .toThrow(/2 gaussianas/);
+  });
+
+  it('sin region_id en el compuesto, las etiquetas de la malla crean la columna', () => {
+    const { region_id: _, ...sinRegion } = compuesto().columnas;
+    const c: CampoPly = { ...compuesto(), columnas: sinRegion };
+    const { campo: e } = campoDelEscaner(c, indicesDelEscaner(c), new Matrix4(), null,
+      Int16Array.from([11, 0]));
+    expect(Array.from(e.columnas['region_id']!)).toEqual([11, 0]);
+  });
+
+  it('la correspondencia malla ↔ gaussianas se mide en el canónico, con tolerancia', () => {
+    const c = compuesto();
+    const idx = indicesDelEscaner(c);
+    const m = new Matrix4().makeTranslation(10, 0, 0);
+    const pos = posicionesEnCanonico(c, idx, m);
+    expect(motivoSinCorrespondencia(pos, Float32Array.from([11, 0, 0, 12, 0, 0]))).toBeNull();
+    expect(motivoSinCorrespondencia(pos, Float32Array.from([1, 0, 0, 2, 0, 0]))).toMatch(/no caen/);
+    expect(motivoSinCorrespondencia(pos, Float32Array.from([11.0005, 0, 0, 12, 0, 0]))).toBeNull();
   });
 
   it('cuenta la numeración por modalidad: una que sólo numera el CBCT deja 0 en el escáner', () => {

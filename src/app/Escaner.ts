@@ -30,7 +30,7 @@ import type { CampoPly } from '../uos/Ply';
 export const MARFIL: readonly [number, number, number] = [0.9, 0.87, 0.8];
 /** Opacidad de visualización. No sale de `density`, que en el escáner vale 0. */
 export const OPACIDAD_ESCANER = 0.92;
-/** Tolerancia para dar por buenas las normales de la malla: los vértices tienen que ser estos. */
+/** Tolerancia para dar por buena la correspondencia malla ↔ gaussianas, en mm. */
 export const TOLERANCIA_NORMALES_MM = 1e-3;
 
 const C0 = 0.28209479177387814;
@@ -137,16 +137,20 @@ export function posicionesEnCanonico(
 }
 
 /**
- * Si las normales de una malla valen para estas gaussianas: mismo número de vértices y
- * cada uno en el mismo sitio. Devuelve el motivo si no valen, o `null` si valen.
+ * Si los vértices de la malla del escáner SON estas gaussianas: mismo número y cada uno en
+ * el mismo sitio, en el canónico. Devuelve el motivo si no lo son, o `null` si lo son.
+ *
+ * ⚠️ **Es lo único que deja usar algo indexado por la malla sobre las gaussianas**: sus
+ * normales para el relieve y, si el compuesto no numera el escáner, sus etiquetas FDI. Se
+ * MIDE en cada contenedor; no se supone porque el emisor de hoy lo haga así.
  */
-export function motivoSinNormales(
-  posGaussianas: Float32Array, posMalla: Float32Array, normales: Float32Array | null,
+export function motivoSinCorrespondencia(
+  posGaussianas: Float32Array, posMalla: Float32Array,
 ): string | null {
-  if (!normales) return 'la malla del escáner no declara normales';
-  if (posMalla.length !== posGaussianas.length || normales.length !== posMalla.length) {
-    return `la malla tiene ${posMalla.length / 3} vértices y el escáner del compuesto ` +
-      `${posGaussianas.length / 3} gaussianas: no se corresponden uno a uno`;
+  if (posMalla.length !== posGaussianas.length) {
+    return `la malla tiene ${(posMalla.length / 3).toLocaleString('es')} vértices y el ` +
+      `escáner del compuesto ${(posGaussianas.length / 3).toLocaleString('es')} gaussianas: ` +
+      'no se corresponden uno a uno';
   }
   let peor = 0;
   for (let i = 0; i < posMalla.length; i += 3) {
@@ -159,11 +163,24 @@ export function motivoSinNormales(
     : null;
 }
 
+/** Si las normales de una malla valen para estas gaussianas, o el motivo si no. */
+export function motivoSinNormales(
+  posGaussianas: Float32Array, posMalla: Float32Array, normales: Float32Array | null,
+): string | null {
+  if (!normales) return 'la malla del escáner no declara normales';
+  const sinCorrespondencia = motivoSinCorrespondencia(posGaussianas, posMalla);
+  if (sinCorrespondencia) return sinCorrespondencia;
+  return normales.length !== posMalla.length
+    ? 'la malla declara un número de normales distinto del de vértices' : null;
+}
+
 /**
  * El campo del escáner en la convención del rasterizador (INRIA): escala en logaritmo,
  * opacidad en logit, color como armónico de grado 0, y el relieve en el de grado 1.
  *
  * `normales` van en el canónico y en el mismo orden que `idx`; `null` deja el relieve a cero.
+ * `etiquetas`, si se dan, sustituyen al `region_id` del compuesto y van también en el orden
+ * de `idx`: es la numeración de la malla, ya verificada su correspondencia.
  */
 export interface Escaner {
   readonly campo: CampoPly;
@@ -177,7 +194,11 @@ export interface Escaner {
 
 export function campoDelEscaner(
   campo: CampoPly, idx: Int32Array, matriz: Matrix4, normales: Float32Array | null,
+  etiquetas: ArrayLike<number> | null = null,
 ): Escaner {
+  if (etiquetas && etiquetas.length !== idx.length) {
+    throw new Error(`${etiquetas.length} etiquetas para ${idx.length} gaussianas del escáner`);
+  }
   const c = campo.columnas;
   for (const k of ['scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3']) {
     if (!c[k]) throw new Error(`el compuesto no trae \`${k}\``);
@@ -203,7 +224,7 @@ export function campoDelEscaner(
   const conRelieve = normales !== null;
   if (conRelieve) for (let j = 0; j < 9; j++) fuera[`f_rest_${j}`] = col();
   const region = c['region_id'];
-  if (region) fuera['region_id'] = col();
+  if (region || etiquetas) fuera['region_id'] = col();
 
   // Sin relieve el marfil va entero; con relieve, el grado 0 baja y el 1 devuelve hasta él.
   const base = normales ? 1 - RELIEVE : 1;
@@ -228,7 +249,8 @@ export function campoDelEscaner(
     q.set(c['rot_1']![i]!, c['rot_2']![i]!, c['rot_3']![i]!, c['rot_0']![i]!).normalize()
       .premultiply(giro);
     fuera['rot_0']![k] = q.w; fuera['rot_1']![k] = q.x; fuera['rot_2']![k] = q.y; fuera['rot_3']![k] = q.z;
-    if (region) fuera['region_id']![k] = region[i]!;
+    if (etiquetas) fuera['region_id']![k] = etiquetas[k]!;
+    else if (region) fuera['region_id']![k] = region[i]!;
     if (conRelieve) {
       const nx = normales[k * 3]!, ny = normales[k * 3 + 1]!, nz = normales[k * 3 + 2]!;
       // Canal-mayor (R,R,R,G,G,G,B,B,B), que es el orden del PLY de INRIA.
