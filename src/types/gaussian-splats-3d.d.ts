@@ -6,7 +6,7 @@
  * `export {...}` del bundle ESM, no inventado.
  */
 declare module '@mkkellogg/gaussian-splats-3d' {
-  import type { Camera, Group, Scene, WebGLRenderer } from 'three';
+  import type { Camera, Group, Scene, ShaderMaterial, WebGLRenderer } from 'three';
 
   export type Vec3 = [number, number, number];
   export type Quat = [number, number, number, number];
@@ -86,6 +86,13 @@ declare module '@mkkellogg/gaussian-splats-3d' {
     /** Multiplica el tamano de todos los splats. 1 = el declarado. */
     setSplatScale(scale: number): void;
     getSplatScale(): number;
+    /**
+     * El material de TODAS las escenas, o `null` antes de la primera carga.
+     *
+     * ⚠️ **Se reconstruye cada vez que se añaden escenas** (`SplatMesh.build`): lo que se le
+     * cuelgue —el gris de `Gris.ts`— hay que volver a ponerlo después de cada carga.
+     */
+    readonly material: ShaderMaterial | null;
   }
 
   export class Viewer {

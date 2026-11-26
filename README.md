@@ -156,6 +156,16 @@ El rasterizador admite como mucho 32 escenas, y cada pieza es una. Si una dentic
 cabe, las piezas más pequeñas **se funden con la encía**: se dibujan, pero no se pueden
 aislar, y un aviso las nombra.
 
+**Al pulsar una pieza, el resto pasa a gris** y ella conserva su color. Antes el resto sólo
+bajaba de opacidad, y no se distinguía: una corona son miles de gaussianas superpuestas, y
+aunque cada una deje pasar más luz, juntas siguen tapando casi lo mismo. El rasterizador
+sólo expone visibilidad y opacidad por escena, así que el gris se injerta en su shader de
+vértices como un uniform más por escena (`Gris.ts`). Si una versión nueva de la biblioteca
+cambia ese shader, el injerto no encaja, el visor vuelve a apagar con la opacidad y lo
+avisa en la consola. Un test comprueba las anclas contra la biblioteca instalada. Sigue sin
+dibujarse un borde: el contorno de un diente cae en el margen gingival, que es justo lo que
+interesa mirar.
+
 **Y `Splats` conserva la geometría de la apariencia, invisible**, para dos cosas que el
 rasterizador no da: la caja de encuadre y el pase de selección contra `region_id`. El
 rasterizador reordena las gaussianas por dentro, así que un índice suyo no es el nuestro.
