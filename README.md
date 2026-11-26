@@ -21,11 +21,18 @@ Un paciente real, abierto tal cual sale del emisor (`agentic-smart-health` 0.18,
 FDI C3). Todo lo dibujado es de este paciente:
 
 - **Coronas**: la apariencia 3DGS del escáner intraoral. Su color **no es medido**: lo
-  aprendió el ajuste y depende de la etiqueta de cada gaussiana.
+  aprendió el ajuste y depende de la etiqueta de cada gaussiana. Se nota en la encía: una
+  franja de unos 2 mm alrededor de cada corona sale del color del diente y no rosada. Son
+  unas 8.000 gaussianas que la numeración C3 da como encía y la segmentación con la que se
+  entrenó el color (`asset.seg_teeth`) daba como diente. Es el color que trae el contenedor:
+  el visor no lo corrige, y «Qué se ve» enseña la nota del emisor que lo avisa.
 - **Numeración FDI** (Capa 3, `investigational`): la pone `gaussian-engine.apariencia`, y
   es la que separa la encía. La encía sale oculta por defecto y se enciende desde «Qué se ve».
 - **Hueso y raíces**: la densidad medida del CBCT, en gris de visualización. La registración
-  CBCT → escáner declara rms 0,56 mm y está **sin verificar por una persona**.
+  CBCT → escáner declara rms 0,56 mm y está **sin verificar por una persona**. Este CBCT
+  llega con **cortes sueltos**: 65 en 46,5 mm, donde una serie completa cada 0,3 mm tendría
+  156, con huecos de hasta 6,75 mm. Encendida, la capa sale como una persiana de láminas,
+  así que **arranca apagada** y el panel dice por qué.
 - **Conductos nerviosos**: este contenedor no los trae, y el visor no los infiere.
 
 | Modo oscuro | Modo claro |
@@ -44,6 +51,21 @@ Se publica con el consentimiento de uso y publicación del paciente, confirmado 
 equipo clínico. El contenedor no se versiona (ver `.gitignore`), y las capturas tapan su
 identificador `urn:uuid`. Los vídeos y GIF se generan fotograma a fotograma desde el lienzo
 del visor, no grabando la pantalla: así el orden de los splats está asentado en cada fotograma.
+
+## Español e inglés
+
+La interfaz está en **español y en inglés**, con el selector ES | EN junto al interruptor de
+tema. Sin elección guardada abre en español si el navegador está en español, y en inglés si
+no. La elección se recuerda (`localStorage`, clave `uos-viewer:idioma`), y `index.html` la
+aplica antes de la primera pintura.
+
+- **Los textos van junto a la componente que los pinta** (`src/app/ui/idioma.tsx` explica
+  el patrón): cada una declara su `es` y su `en`, y el compilador obliga a que tengan las
+  mismas claves.
+- **Se traduce la interfaz, no los datos.** Ids, métodos, hallazgos del informe y notas del
+  emisor salen tal como los trae el contenedor.
+- **Los reparos y errores del lector salen en español** en los dos idiomas: los escribe
+  `src/uos`, que no se toca. Van marcados con `lang="es"`.
 
 ## La interfaz es React; el render no
 
@@ -262,9 +284,10 @@ gaussiano del CBCT. No hay mallas sólidas.
        si no se puede leer se pierden el relieve y la numeración por malla, no las coronas.
   3. **Sin ninguna de las dos**: solo se ve el CBCT.
 
-  En cada caso «Qué se ve» dice qué falta. La numeración FDI es una capa **aparte**, que se
-  puede apagar y lleva su Capa, su régimen y el hash de sus pesos tal como los declara su
-  sidecar. Se ofrece solo si alguna gaussiana dibujada tiene pieza. Para las coronas del
+  En cada caso «Qué se ve» dice qué falta. La numeración FDI **no se puede apagar**: es el
+  índice con el que se lee un caso dental, y apagarla sólo quitaba la selección y el
+  odontograma. Su fila lleva su Capa, su régimen y el hash de sus pesos tal como los declara
+  su sidecar. Sale solo si alguna gaussiana dibujada tiene pieza. Para las coronas del
   escáner sale, por orden:
   1. Del `derived_seg` del **compuesto**, si numera alguna gaussiana del escáner. Se
      cuenta por `source_modality`, no se supone.
@@ -288,14 +311,18 @@ gaussiano del CBCT. No hay mallas sólidas.
   no hay camino, la capa no se dibuja, porque colocarla a ojo sería inventar un
   alineamiento. Sale encendido salvo que la cadena sea *provisional* (§6). Si está *sin
   verificar*, se enciende igualmente y se dice al lado.
+  - **También sale apagado si al CBCT le faltan cortes** (`Espaciado.mideCortes`): algún
+    hueco entre cortes vecinos de al menos el doble del paso regular de la serie. Cada
+    corte se dibuja bien, pero entre ellos no hay nada que dibujar. Ensanchar los splats
+    hasta tapar los huecos sería inventar hueso donde no hay medida, así que el visor no lo
+    hace: dice cuántos cortes hay, cuántos tendría la serie completa y el mayor hueco.
   - En oscuro **emite**: se suma (`dst + src`).
   - En claro **absorbe**: se multiplica (`dst · (1 − src)`). Es Beer-Lambert en forma de
     producto, como una radiografía.
   - Las dos composiciones son conmutativas, así que la decisión de no ordenar se mantiene.
 - **Encía**: apagada por defecto, para que las coronas se lean como dientes y no como una
   arcada. La separa la numeración en uso: el código 0 es la encía **y todo lo que el modelo
-  no asignó**, y el panel lo dice. Sin numeración no hay corte y se ve todo lo medido. Las
-  piezas que no caben en el rasterizador van con ella.
+  no asignó**, y el panel lo dice. Las piezas que no caben en el rasterizador van con ella.
 - **Raíces**: las gaussianas del CBCT del compuesto que su `derived_seg` asigna a una pieza
   (`source_modality = 0` y código ≠ 0), en marfil de visualización, dentro del hueso. Solo
   se dibujan si el contenedor las numera: en agosto son 236.261; noviembre no numera
