@@ -43,6 +43,45 @@
   /* El negro de la portada. Es mas negro que `--fondo` a proposito: ahi no hay modelo que
      iluminar, solo dos colores —negro y ambar— y el contraste es todo lo que hay. */
   --negro: #08090a;
+  --portada: var(--negro);
+  --borde-muestra: rgb(255 255 255 / .25);
+  /* El interruptor de tema: la pildora hundida y el boton que se desliza. */
+  --pildora: #07080b;
+  --pildora-sombra: inset 0 2px 6px rgb(0 0 0 / .8), inset 0 -1px 0 rgb(255 255 255 / .06);
+  --pomo: #171a2b;
+  --pomo-sombra: inset 0 0 0 1.5px rgb(150 140 255 / .55), 0 0 14px rgb(118 104 255 / .5);
+  --pomo-punto: #ecebf6;
+  color-scheme: dark;
+}
+
+/*
+ * ⚠️ **El modo claro cambia los PAPELES de color, no su significado.** `--acento` sigue
+ * siendo lo medido, `--aviso` lo que pide leerse con cuidado y `--grave` lo que incumple:
+ * se oscurecen lo justo para leerse sobre beige, pero un verde no pasa a significar otra
+ * cosa por cambiar de fondo. El tema lo pone el script en linea de `index.html` antes de
+ * pintar, como `data-theme` en `<html>`.
+ */
+:root[data-theme="light"] {
+  --fondo: #ebe5d8;
+  --panel: #f6f2e9;
+  --panel-alto: #eee8db;
+  --texto: #1f2428;
+  --tenue: #676b6e;
+  --linea: #ddd5c4;
+  --linea-viva: #c8bea9;
+  --acento: #2a7569;
+  --grave: #a5403d;
+  --aviso: #b06a1c;
+  --sombra: 0 8px 28px rgb(70 52 22 / .16);
+  --portada: #efe9dd;
+  --borde-muestra: rgb(0 0 0 / .2);
+  --pildora: #ddd5c4;
+  --pildora-sombra: inset 0 2px 5px rgb(90 70 40 / .35), inset 0 -1px 0 rgb(255 255 255 / .7);
+  --pomo: #f8f3e6;
+  --pomo-sombra: inset -2px 2px 0 rgb(244 162 54 / .95), 0 1px 3px rgb(80 60 30 / .3),
+    0 0 12px rgb(244 162 54 / .35);
+  --pomo-punto: #4a4440;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
 html, body {
@@ -112,7 +151,7 @@ code { color: var(--acento); }
  * ordena es el contraste. El titular va en la display del documento y a tamaño de titular
  * de verdad, porque es una INSTRUCCION y es lo primero que alguien lee de este software.
  */
-#portada { position: fixed; inset: 0; z-index: 5; background: var(--negro);
+#portada { position: fixed; inset: 0; z-index: 5; background: var(--portada);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   gap: 1.8rem; padding: 4rem clamp(1.5rem, 6vw, 5rem); text-align: center; }
 #portada .marca { font-size: 1.15rem; letter-spacing: .3em; text-transform: uppercase;
@@ -394,6 +433,44 @@ button.guardar.malo { color: var(--grave); border-color: var(--grave); }
 .tonos li { display: grid; grid-template-columns: 1rem 4.5rem 1fr; align-items: center;
   gap: .5rem; font-size: .78rem; margin: .15rem 0; border: 0; padding: 0; }
 .muestra { width: 1rem; height: 1rem; border-radius: 2px;
-  border: 1px solid rgb(255 255 255 / .25); }
+  border: 1px solid var(--borde-muestra); }
 .tercio { color: var(--tenue); }
 .lab { font-variant-numeric: tabular-nums; }
+
+/* --- interruptor de tema ------------------------------------------------- */
+/*
+ * Una pildora hundida (sombra interior) y un boton cuadrado de esquinas redondeadas que se
+ * desliza: a la derecha en claro, a la izquierda en oscuro. El icono se DISUELVE punto a
+ * punto: cada punto lleva su retardo en `--retardo`, asi que los del sol se apagan y los
+ * de la luna se encienden en desorden, como una matriz de LED que cambia de imagen.
+ */
+.interruptor-tema { position: relative; flex: none; display: inline-flex; }
+.interruptor-tema > button {
+  position: relative; width: 4.4rem; height: 2.4rem; padding: 0; border: 0;
+  border-radius: 999px; cursor: pointer; background: var(--pildora);
+  box-shadow: var(--pildora-sombra); transition: background .3s ease;
+}
+.interruptor-tema > button:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
+.interruptor-tema .pomo {
+  position: absolute; top: .22rem; left: .22rem; width: 1.96rem; height: 1.96rem;
+  padding: .2rem; border-radius: .5rem; background: var(--pomo);
+  box-shadow: var(--pomo-sombra);
+  transition: transform .38s cubic-bezier(.4, 1.3, .5, 1), background .3s ease,
+    box-shadow .3s ease;
+}
+.interruptor-tema > button[data-tema="claro"] .pomo { transform: translateX(2rem); }
+.interruptor-tema rect { fill: var(--pomo-punto); opacity: 0;
+  transition: opacity 70ms linear var(--retardo); }
+.interruptor-tema > button[data-tema="claro"] .sol rect,
+.interruptor-tema > button[data-tema="oscuro"] .luna rect { opacity: 1; }
+.interruptor-tema .tooltip {
+  position: absolute; top: calc(100% + .55rem); right: 0; z-index: 50;
+  white-space: nowrap; font-size: .8rem; padding: .3rem .55rem; border-radius: 4px;
+  color: #ecebe6; background: #1c1f24; box-shadow: var(--sombra);
+  opacity: 0; pointer-events: none; transition: opacity .15s ease;
+}
+.interruptor-tema > button:hover + .tooltip,
+.interruptor-tema > button:focus-visible + .tooltip { opacity: 1; transition-delay: .35s; }
+@media (prefers-reduced-motion: reduce) {
+  .interruptor-tema .pomo, .interruptor-tema rect, .interruptor-tema .tooltip { transition: none; }
+}

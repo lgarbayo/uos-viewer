@@ -20,12 +20,14 @@ import { abreCaso, type Caso } from '../Caso';
 import { VisorLiberado } from '../Visor';
 import { Barra } from './Barra';
 import { Ficha, type Seleccion } from './Ficha';
+import { InterruptorTema } from './InterruptorTema';
 import { Modal } from './Modal';
 import { Odontograma } from './Odontograma';
 import { PanelClinico } from './PanelClinico';
 import { PanelContenedor } from './PanelContenedor';
 import { Portada } from './Portada';
 import { useAviso } from './useAviso';
+import { useTema } from './useTema';
 import { useVisor } from './useVisor';
 
 type Estado =
@@ -43,6 +45,7 @@ export function App() {
   const [seleccion, setSeleccion] = useState<Seleccion>({ tipo: 'ninguna' });
   const [abierto, setAbierto] = useState<IdModal | null>(null);
   const { aviso, avisa } = useAviso();
+  const [tema, ponTema] = useTema();
   /** Cada apertura se numera: la respuesta de una apertura vieja no pisa a la nueva. */
   const aperturas = useRef(0);
 
@@ -72,6 +75,9 @@ export function App() {
     visor?.resalta(fdi);
     setSeleccion(fdi === null ? { tipo: 'ninguna' } : { tipo: 'pieza', fdi });
   }, [visor]);
+
+  // El fondo 3D sigue al tema. También al montar: un visor nuevo arranca con el de ahora.
+  useEffect(() => { visor?.ponTema(tema); }, [visor, tema]);
 
   // Arrastrar un `.uos` a cualquier parte de la ventana.
   useEffect(() => {
@@ -171,7 +177,8 @@ export function App() {
     <>
       <div id="montaje" ref={montaje} onClick={alClicar} />
 
-      <Barra manifiesto={caso?.manifiesto ?? null} alAbrir={(f) => void abre(f)} />
+      <Barra manifiesto={caso?.manifiesto ?? null} alAbrir={(f) => void abre(f)}
+        extremo={<InterruptorTema tema={tema} alCambiar={ponTema} />} />
 
       <nav id="esquinas">
         {modales && (

@@ -9,6 +9,22 @@
       boton de abrir: el resto del visor es monoespaciado porque enseña codigos FDI,
       hashes y L*a*b* en columna, y ahi la anchura fija es lo que deja comparar dos filas.
     -->
+    <!--
+      El tema se decide AQUI, antes de la primera pintura: si lo decidiera React, la
+      pagina saldria un fotograma con el tema equivocado. Lo elegido por el usuario manda;
+      si no eligio nada, `prefers-color-scheme`. `localStorage` puede lanzar (ventana
+      privada, datos bloqueados), y entonces simplemente no hay eleccion guardada.
+    -->
+    <script>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem('uos-viewer:tema'); } catch (e) {}
+        if (t !== 'claro' && t !== 'oscuro') {
+          t = matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'oscuro';
+        }
+        document.documentElement.dataset.theme = t === 'claro' ? 'light' : 'dark';
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
