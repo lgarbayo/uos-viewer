@@ -40,6 +40,7 @@ const es = {
   colorApariencia: 'color de la apariencia 3DGS',
   medido: ' · medido',
   noMedido: ' · no medido',
+  notaEmisor: 'nota del emisor:',
   formaEscaner: 'forma medida del escáner',
   colorVisualizacion: 'color y opacidad de visualización, no del paciente: este caso no trae apariencia ·',
   gaussianasDe: (n: string) => <>{n} gaussianas de</>,
@@ -71,7 +72,7 @@ const es = {
   oculta: 'oculta',
   laSepara: (seg: ReactNode, capa: ReactNode) => <>lo separa la numeración {seg} ({capa}): el
     código 0 es la encía y todo lo que el modelo no asignó</>,
-  vanConElla: (piezas: string) => ` · las piezas ${piezas} van con ella`,
+  vanConElla: (piezas: readonly number[]) => ` · las piezas ${piezas.join(', ')} van con ella`,
   raices: 'Raíces',
   cbctPaciente: 'CBCT de este paciente',
   raicesNota: (n: string, id: ReactNode, de: ReactNode, modelo: string, capa: ReactNode) =>
@@ -110,6 +111,7 @@ const TEXTOS: Record<Idioma, typeof es> = {
     colorApariencia: 'color from the 3DGS appearance',
     medido: ' · measured',
     noMedido: ' · not measured',
+    notaEmisor: 'emitter note:',
     formaEscaner: 'shape measured by the scanner',
     colorVisualizacion: 'display color and opacity, not the patient’s: this case carries no appearance ·',
     gaussianasDe: (n) => <>{n} Gaussians from</>,
@@ -141,7 +143,8 @@ const TEXTOS: Record<Idioma, typeof es> = {
     oculta: 'hidden',
     laSepara: (seg, capa) => <>separated by the numbering {seg} ({capa}): code 0 is the gingiva
       and everything the model left unassigned</>,
-    vanConElla: (piezas) => ` · teeth ${piezas} go with it`,
+    vanConElla: (piezas) => piezas.length === 1 ? ` · tooth ${piezas[0]} goes with it`
+      : ` · teeth ${piezas.join(', ')} go with it`,
     raices: 'Roots',
     cbctPaciente: 'this patient’s CBCT',
     raicesNota: (n, id, de, modelo, capa) =>
@@ -150,8 +153,8 @@ const TEXTOS: Record<Idioma, typeof es> = {
     modeloNoDeclarado: 'model not declared',
     dienteEntero: 'it is the whole tooth from the CBCT, crown included: what rises above the gingiva is covered by the scan',
     hueso: 'Bone and roots',
-    densidad: (medida, id) => <>{medida ? 'measured' : 'unmeasured'} density {id}, in display
-      grey: it is hard tissue, not a bone segmentation</>,
+    densidad: (medida, id) => <>{medida ? 'measured' : 'not measured'} density from {id}, in display
+      gray: it is hard tissue, not a bone segmentation</>,
     dibujadas: (n, total) => ` · ${n} of ${total} Gaussians`,
     enCanonico: 'already travels in the canonical frame',
     colocadoCon: 'placed with',
@@ -159,7 +162,7 @@ const TEXTOS: Record<Idioma, typeof es> = {
     provisional: 'provisional: off by default',
     sinVerificar: 'not verified by a person',
     verificada: 'verified',
-    cortesIncompletos: (c, i) => <>the CBCT arrives as loose slices: {c.n} over{' '}
+    cortesIncompletos: (c, i) => <>the CBCT arrives with missing slices: {c.n} over{' '}
       {numero(i, c.extension, 1)} mm, where a complete series every {numero(i, c.paso, 2)} mm
       would have {c.esperados}, and the largest gap is {numero(i, c.hueco, 2)} mm. The stripes
       are the missing slices, not bone: the viewer does not fill them in</>,
@@ -207,6 +210,14 @@ export function Procedencia({
                 {t.colorApariencia} <code>{apariencia.id}</code>
                 {apariencia.medida ? t.medido : t.noMedido}
               </div>
+              {/* ⚠️ **La nota del sidecar, tal cual.** En el caso A de noviembre dice que el
+                  color está condicionado por la etiqueta de cada gaussiana, y se ve: una
+                  franja de encía de unos 2 mm alrededor de cada corona sale del color del
+                  diente, porque el ajuste la tomó por diente. El visor no recolorea —el
+                  color es el del contenedor—, pero quien mira tiene que poder leerlo. */}
+              {apariencia.nota && (
+                <div className="nota">{t.notaEmisor} <q>{apariencia.nota}</q></div>
+              )}
             </div>
           </li>
         )}
@@ -295,7 +306,7 @@ export function Procedencia({
             <div className="nota">
               {t.laSepara(<code>{caso.etiquetas}</code>,
                 caso.etiquetas ? capaDe(caso.etiquetas) : t.capaNoDeclarada)}
-              {caso.sinAislar.length > 0 && t.vanConElla(caso.sinAislar.join(', '))}
+              {caso.sinAislar.length > 0 && t.vanConElla(caso.sinAislar)}
             </div>
           </li>
         )}

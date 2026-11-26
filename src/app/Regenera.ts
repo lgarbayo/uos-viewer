@@ -311,14 +311,22 @@ export async function construye3mf(
   ]);
 }
 
+/** En qué fase va la regeneración. Ver `regenera`. */
+export type ProgresoRegenera =
+  | { readonly fase: 'leyendo' }
+  | { readonly fase: 'mezclando'; readonly vertices: number }
+  | { readonly fase: 'color'; readonly fraccion: number }
+  | { readonly fase: 'escribiendo' };
+
 /**
  * Regenera la malla coloreada a partir del contenedor abierto.
  *
- * `avisa` recibe una línea de estado para enseñar mientras dura; no es decorativa: el
- * cálculo tarda segundos y sin ella el botón parece colgado.
+ * `avisa` recibe la fase en curso para enseñarla mientras dura; no es decorativa: el
+ * cálculo tarda segundos y sin ella el botón parece colgado. Va como dato y no como frase
+ * para que la interfaz la diga en su idioma.
  */
 export async function regenera(
-  uos: UosLoader, avisa: (texto: string) => void,
+  uos: UosLoader, avisa: (p: ProgresoRegenera) => void,
   // ⚠️ **El cálculo entra por parámetro, y no es una abstracción gratuita.** Por defecto va
   // a un Worker, que es lo correcto en el navegador y lo único que no existe en Node — así
   // que sin esto la función que de verdad usa el visor no se podría probar entera: sólo
@@ -342,7 +350,7 @@ export async function regenera(
     );
   }
 
-  avisa('leyendo el gemelo…');
+  avisa({ fase: 'leyendo' });
   const malla = leeGlb(await uos.bytes(escena));
   // Los índices de todas las primitivas, seguidos, y el FDI llevado a cada vértice.
   const total = malla.primitivas.reduce((n, p) => n + p.indices.length, 0);
@@ -437,15 +445,15 @@ export async function regenera(
   // pinta la arcada entera; lo que dice si un color es del paciente es la capa clínica.
   const conColor = await piezasConColor(uos);
 
-  avisa(`mezclando ${(malla.posiciones.length / 3).toLocaleString('es')} vértices…`);
+  avisa({ fase: 'mezclando', vertices: malla.posiciones.length / 3 });
   const peticion: Peticion = {
     posiciones: malla.posiciones, indices, fdiVertice, colorFloat32: splatsColor !== null,
     centros, fdc, opacidad: splatsColor?.opacidad ?? col['opacity']!, sigma, conColor,
   };
   const res = await calcula(peticion, (frac) =>
-    avisa(`mezclando color… ${Math.round(frac * 100)} %`));
+    avisa({ fase: 'color', fraccion: frac }));
 
-  avisa('escribiendo los ficheros…');
+  avisa({ fase: 'escribiendo' });
   let conFdi = 0;
   for (let i = 0; i < fdiVertice.length; i++) if (fdiVertice[i]) conFdi++;
   const nv = malla.posiciones.length / 3;

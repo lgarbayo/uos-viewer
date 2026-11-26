@@ -13,7 +13,21 @@
 
 import { useId, type CSSProperties } from 'react';
 
+import { useIdioma, type Idioma } from './idioma';
 import type { Tema } from './useTema';
+
+const es = {
+  modoOscuro: 'Modo oscuro',
+  cambiarA: (destino: Tema) => `Cambiar a modo ${destino}`,
+};
+
+const TEXTOS: Record<Idioma, typeof es> = {
+  es,
+  en: {
+    modoOscuro: 'Dark mode',
+    cambiarA: (destino) => `Switch to ${destino === 'claro' ? 'light' : 'dark'} mode`,
+  },
+};
 
 const SOL = [
   '......#......',
@@ -84,12 +98,14 @@ export function InterruptorTema({ tema, alCambiar }: {
   tema: Tema; alCambiar: (t: Tema) => void;
 }) {
   const id = useId();
+  const idioma = useIdioma();
+  const t = TEXTOS[idioma];
   const destino = tema === 'claro' ? 'oscuro' : 'claro';
-  const texto = `Cambiar a modo ${destino}`;
+  const texto = t.cambiarA(destino);
   return (
     <span className="interruptor-tema">
       <button type="button" role="switch" aria-checked={tema === 'oscuro'}
-        aria-label="Modo oscuro" aria-describedby={id} data-tema={tema}
+        aria-label={t.modoOscuro} aria-describedby={id} data-tema={tema}
         onClick={() => alCambiar(destino)}>
         <span className="pomo" aria-hidden="true">
           <svg viewBox={`0 0 ${LADO * PASO} ${LADO * PASO}`} width="100%" height="100%">

@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react';
 
 import type { Manifiesto } from '../../uos/Manifest';
+import { useIdioma, type Idioma } from './idioma';
 
 interface Props {
   readonly manifiesto: Manifiesto | null;
@@ -15,7 +16,24 @@ interface Props {
   readonly extremo?: ReactNode;
 }
 
+const es = {
+  marco: 'marco',
+  visitas: 'visitas',
+  abrir: 'abrir',
+};
+
+const TEXTOS: Record<Idioma, typeof es> = {
+  es,
+  en: {
+    marco: 'frame',
+    visitas: 'visits',
+    abrir: 'open',
+  },
+};
+
 export function Barra({ manifiesto: m, alAbrir, extremo }: Props) {
+  const idioma = useIdioma();
+  const t = TEXTOS[idioma];
   return (
     <header id="barra">
       <div id="marca">uos<span>-viewer</span></div>
@@ -26,13 +44,13 @@ export function Barra({ manifiesto: m, alAbrir, extremo }: Props) {
             <span className={`phi phi-${m.phi_state}`}>{m.phi_state}</span>
             <span className="campo">uos <b>{m.uos_version}</b></span>
             <span className="campo">{m.generator['name'] ?? '—'} <b>{m.generator['version'] ?? ''}</b></span>
-            <span className="campo">marco <b>{m.canonical_frame.id}</b> ({m.canonical_frame.units})</span>
-            <span className="campo">visitas <b>{m.visits.map((v) => v.id).join(', ') || '—'}</b></span>
+            <span className="campo">{t.marco} <b>{m.canonical_frame.id}</b> ({m.canonical_frame.units})</span>
+            <span className="campo">{t.visitas} <b>{m.visits.map((v) => v.id).join(', ') || '—'}</b></span>
           </>
         )}
       </div>
       <label className="boton">
-        abrir <code>.uos</code>
+        {t.abrir} <code>.uos</code>
         <input id="fichero" type="file" accept=".uos" hidden onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) alAbrir(f);
