@@ -20,11 +20,16 @@ interface Props {
   readonly alCambiarNumeracion: (si: boolean) => void;
 }
 
+/** Milímetros con coma decimal y un número fijo de decimales, como el resto del panel. */
+function mm(v: number, decimales: number): string {
+  return v.toLocaleString('es', { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+}
+
 export function Procedencia({
   caso, huesoVisible, alCambiarHueso, numeracion, alCambiarNumeracion,
 }: Props) {
-  const { apariencia, escaner, hueso, segmentador, hayEtiquetas } = caso;
-  if (!apariencia && !escaner && !hueso) return null;
+  const { apariencia, escaner, escanerFallido, hueso, segmentador, hayEtiquetas } = caso;
+  if (!apariencia && !escaner && !hueso && !escanerFallido) return null;
   const reg = hueso?.colocacion;
   // El régimen de las etiquetas lo dice SU sidecar, no el visor.
   const seg = caso.segmentaciones.find((s) => s.id === caso.etiquetas);
@@ -53,7 +58,8 @@ export function Procedencia({
             <div>
               <b>Coronas</b> · forma medida del escáner
               <div className="nota">
-                color de visualización, no del paciente: este caso no trae apariencia ·{' '}
+                color y opacidad de visualización, no del paciente: este caso no trae
+                apariencia ·{' '}
                 {escaner.n.toLocaleString('es')} gaussianas de <code>{escaner.id}</code>
               </div>
               <div className="nota">
@@ -62,6 +68,13 @@ export function Procedencia({
                     no se dibuja</>
                   : <>sin relieve: {escaner.relieve.sinRelieve}</>}
               </div>
+              {escaner.infladas > 0 && (
+                <div className="nota">
+                  {escaner.infladas.toLocaleString('es')} de {escaner.n.toLocaleString('es')} se
+                  dibujan con σ ≥ {mm(escaner.sigmaMinima, 3)} mm (90 % del espaciado medido,
+                  {' '}{mm(escaner.espaciado, 3)} mm): tamaño de visualización, no medido
+                </div>
+              )}
               {!escaner.numeracion.usada && (
                 <div className="nota sinver">
                   sin numeración en las coronas:{' '}
@@ -80,8 +93,13 @@ export function Procedencia({
             <span className="muestra-capa ausente" aria-hidden="true" />
             <div>
               <b>Coronas</b>
-              <div className="nota">este contenedor no trae ni apariencia ni gaussianas del
-                escáner: sólo se ve el CBCT</div>
+              {escanerFallido
+                // El contenedor SÍ las trae: decir que no sería falso.
+                ? <div className="nota sinver">las gaussianas del escáner de{' '}
+                  <code>{escanerFallido.id}</code> no se pintan: {escanerFallido.motivo}. Sólo
+                  se ve el CBCT</div>
+                : <div className="nota">este contenedor no trae ni apariencia ni gaussianas del
+                  escáner: sólo se ve el CBCT</div>}
             </div>
           </li>
         )}
@@ -96,11 +114,15 @@ export function Procedencia({
             <div className="nota">
               por {segmentador || 'un modelo'}
               {caso.etiquetas && <> · <code>{caso.etiquetas}</code></>} ·{' '}
-              <span className="l3">Capa {seg?.capa ?? 3}</span>
+              {/* La Capa y el régimen, tal como los declara el sidecar: no se suponen. */}
+              {seg?.capa != null ? <span className="l3">Capa {seg.capa}</span>
+                : <span className="sinver">Capa no declarada</span>}
               {seg?.estado && <> · {seg.estado}</>}
               {/* El hash va TAL COMO VIENE: si el emisor declara uno equivocado, el visor no
                   lo corrige ni lo esconde. */}
-              {seg?.pesos && <> · pesos <code title={seg.pesos}>{seg.pesos.slice(0, 12)}…</code></>}
+              {seg && (seg.pesos
+                ? <> · pesos <code title={seg.pesos}>{seg.pesos.slice(0, 12)}…</code></>
+                : <> · pesos <span className="sinver">no declarado</span></>)}
             </div>
             {numeradoPorMalla && (
               <div className="nota">
@@ -136,7 +158,7 @@ export function Procedencia({
                       <code>{p.registro.id}</code>{p.invertido ? ' (invertida)' : ''}{' '}
                       <span className="k">{p.registro.method}</span>
                       {p.registro.rms_error_mm != null
-                        && <> · rms {p.registro.rms_error_mm.toFixed(2)} mm</>}{' '}
+                        && <> · rms {mm(p.registro.rms_error_mm, 2)} mm</>}{' '}
                     </span>
                   ))}
                   {reg.provisional

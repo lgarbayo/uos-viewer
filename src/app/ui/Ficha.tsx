@@ -22,12 +22,16 @@ interface Props {
   readonly seleccion: Seleccion;
   readonly piezas: ReadonlyMap<string, Pieza>;
   readonly segmentador: string;
+  /** La Capa que DECLARA el sidecar de la segmentación que numera, o `null` si no la declara. */
+  readonly capa: number | null;
   readonly frontera: Caso['frontera'];
   readonly margen: Caso['margen'];
   readonly alCerrar: () => void;
 }
 
-export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, frontera, margen, alCerrar }: Props) {
+export function Ficha({
+  hayEtiquetas, seleccion, piezas, segmentador, capa, frontera, margen, alCerrar,
+}: Props) {
   // `#ficha:not(:empty)` es lo que le pone la caja: sin etiquetas no hay nada que decir.
   if (!hayEtiquetas) return <div id="ficha" />;
   if (seleccion.tipo === 'ninguna') {
@@ -64,7 +68,9 @@ export function Ficha({ hayEtiquetas, seleccion, piezas, segmentador, frontera, 
         : <p className="nota">el informe no dice nada de esta pieza</p>}
       {aviso && <p className="aviso-frontera">{aviso}</p>}
       {lineaMargen && <p className="nota">{lineaMargen} · <code>{margen!.id}</code></p>}
-      <p className="nota">segmentada por {segmentador || '—'} · <span className="l3">Layer 3</span></p>
+      <p className="nota">segmentada por {segmentador || '—'} ·{' '}
+        {capa !== null ? <span className="l3">Capa {capa}</span>
+          : <span className="sinver">Capa no declarada</span>}</p>
     </div>
   );
 }

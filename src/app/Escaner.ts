@@ -179,8 +179,9 @@ export function motivoSinNormales(
  * opacidad en logit, color como armónico de grado 0, y el relieve en el de grado 1.
  *
  * `normales` van en el canónico y en el mismo orden que `idx`; `null` deja el relieve a cero.
- * `etiquetas`, si se dan, sustituyen al `region_id` del compuesto y van también en el orden
- * de `idx`: es la numeración de la malla, ya verificada su correspondencia.
+ * `etiquetas` es la numeración FDI ya elegida, en el orden de `idx`: la del `derived_seg` del
+ * compuesto o la de la malla con su correspondencia verificada. Sin ella no hay columna
+ * `region_id`: un código que el compuesto trajera por su cuenta, sin sidecar, no se usa.
  */
 export interface Escaner {
   readonly campo: CampoPly;
@@ -223,8 +224,7 @@ export function campoDelEscaner(
   };
   const conRelieve = normales !== null;
   if (conRelieve) for (let j = 0; j < 9; j++) fuera[`f_rest_${j}`] = col();
-  const region = c['region_id'];
-  if (region || etiquetas) fuera['region_id'] = col();
+  if (etiquetas) fuera['region_id'] = col();
 
   // Sin relieve el marfil va entero; con relieve, el grado 0 baja y el 1 devuelve hasta él.
   const base = normales ? 1 - RELIEVE : 1;
@@ -250,7 +250,6 @@ export function campoDelEscaner(
       .premultiply(giro);
     fuera['rot_0']![k] = q.w; fuera['rot_1']![k] = q.x; fuera['rot_2']![k] = q.y; fuera['rot_3']![k] = q.z;
     if (etiquetas) fuera['region_id']![k] = etiquetas[k]!;
-    else if (region) fuera['region_id']![k] = region[i]!;
     if (conRelieve) {
       const nx = normales[k * 3]!, ny = normales[k * 3 + 1]!, nz = normales[k * 3 + 2]!;
       // Canal-mayor (R,R,R,G,G,G,B,B,B), que es el orden del PLY de INRIA.

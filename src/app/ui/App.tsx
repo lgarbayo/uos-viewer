@@ -228,7 +228,9 @@ export function App() {
 
       {caso && (
         <Ficha hayEtiquetas={caso.hayEtiquetas && numeracion} seleccion={seleccion} piezas={caso.piezas}
-          segmentador={caso.segmentador} frontera={caso.frontera} margen={caso.margen}
+          segmentador={caso.segmentador}
+          capa={caso.segmentaciones.find((s) => s.id === caso.etiquetas)?.capa ?? null}
+          frontera={caso.frontera} margen={caso.margen}
           alCerrar={() => selecciona(null)} />
       )}
 

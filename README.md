@@ -120,6 +120,10 @@ el percentil 95.
 Se monta como `DropInViewer`, un `THREE.Group` colgado de nuestra escena, para que la
 cámara siga siendo de `Escena`: las vistas guardadas del §7 traen su `up` medido.
 
+El rasterizador admite como mucho 32 escenas, y cada pieza es una. Si una dentición no
+cabe, las piezas más pequeñas **se funden con la encía**: se dibujan, pero no se pueden
+aislar, y un aviso las nombra.
+
 **Y `Splats` conserva la geometría de la apariencia, invisible**, para dos cosas que el
 rasterizador no da: la caja de encuadre y el pase de selección contra `region_id`. El
 rasterizador reordena las gaussianas por dentro, así que un índice suyo no es el nuestro.
@@ -184,19 +188,22 @@ gaussiano del CBCT. No hay mallas sólidas.
   1. **Con apariencia 3DGS** (`KHR_gaussian_splatting` en `scene.glb` o
      `derived/appearance.glb`): su **color real** (`f_dc`, albedo). El tema no lo toca. El
      falso color por FDI (`Derivados.colorDe`) no se usa para pintar.
-  2. **Sin apariencia pero con compuesto CBCT + escáner** (`scene/composite.ply`, perfil
-     `histora-twin/1.0`, el mismo camino del §11.2 que el campo del CBCT): sus gaussianas
-     con `source_modality = 1`, en `Escaner.ts`. Posición, escala y rotación son **forma
+  2. **Sin apariencia pintada pero con compuesto CBCT + escáner** (`scene/composite.ply`, el
+     mismo camino del §11.2 que el campo del CBCT): sus gaussianas con
+     `source_modality = 1`, en `Escaner.ts`. Solo si el descriptor declara un perfil de
+     medida (`ash-twin/1.0`, `histora-twin/1.0`) y `measured: true`. Un compuesto ajustado
+     no se pinta como forma del escáner, y el panel dice por qué. Posición, escala y rotación son **forma
      medida** del escáner y se colocan con la registración declarada. El color es **marfil
      neutro de visualización** y la opacidad también es de visualización. `density` **no**
      se lee como opacidad: en el escáner vale 0, porque el escáner no mide atenuación. Se
      dibujan con el mismo rasterizador que la apariencia, porque son elipses opacas de
-     superficie. Dos ajustes de display, y el panel los nombra:
+     superficie. Hay dos ajustes de display, y el panel los nombra:
      - Cada gaussiana se dibuja al menos al 90 % del espaciado **medido** de la nube. En
        agosto, σ = 0,066 mm frente a 0,133 mm entre vecinas: sin el ajuste, las caras
        frontales salían moteadas.
      - El relieve sale de las normales que declara la malla de `scene.glb`, y solo si sus
-       vértices caen uno a uno sobre esas gaussianas (≤ 0,001 mm). La malla no se dibuja.
+       vértices caen uno a uno sobre esas gaussianas (≤ 0,001 mm). La malla no se dibuja, y
+       si no se puede leer se pierden el relieve y la numeración por malla, no las coronas.
   3. **Sin ninguna de las dos**: solo se ve el CBCT.
 
   En cada caso «Qué se ve» dice qué falta. La numeración FDI es una capa **aparte**, que se
@@ -207,7 +214,12 @@ gaussiano del CBCT. No hay mallas sólidas.
      cuenta por `source_modality`, no se supone.
   2. Si no, del `derived_seg` de la **malla del escáner**. Se une a las gaussianas solo con
      la correspondencia uno a uno medida (≤ 0,001 mm en el canónico). `leeEtiquetas`
-     comprueba además el marco, los hashes y el `source_positions_sha256` del sidecar.
+     comprueba además el marco y los hashes, y el orden contra el `source_positions_sha256`
+     cuando el sidecar lo declara.
+
+  Una columna `region_id` que el compuesto traiga por su cuenta, sin un `derived_seg` que la
+  declare, no se usa. La frontera por pieza y el margen gingival de la ficha salen de la
+  misma segmentación que numera, nunca de otra.
 
   El visor no infiere ninguna etiqueta: une un código que el contenedor ya trae y dice de
   dónde sale. En el caso de agosto, el del compuesto numera 236.261 gaussianas del CBCT y

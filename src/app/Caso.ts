@@ -58,6 +58,8 @@ export interface Caso {
   readonly hueso: InfoHueso | null;
   /** Las coronas desde el escáner del compuesto, cuando no hay apariencia. */
   readonly escaner: InfoEscaner | null;
+  /** Un compuesto con gaussianas del escáner que no se pintaron, y por qué. */
+  readonly escanerFallido: { readonly id: string; readonly motivo: string } | null;
   /** El `derived_seg` que da la selección y el odontograma, o `null`. */
   readonly etiquetas: string | null;
   /** Lo que declara cada segmentación de `derived/`. Ver `Segmentacion.ts`. */
@@ -76,7 +78,8 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   // ⚠️ **Las capas GAUSSIANAS son lo único que se dibuja, y son EL MODELO.** El contenedor
   // lleva sólo el campo gaussiano y el manifiesto —el escaneo original viaja fuera,
   // nombrado por su sha256—, así que no hay malla que enseñar mientras.
-  const { avisos, region, apariencia, hueso, escaner, etiquetas } = await visor.carga(uos);
+  const { avisos, region, apariencia, hueso, escaner, escanerFallido, etiquetas } =
+    await visor.carga(uos);
 
   if (vistas[0]) visor.escena.aplicaVista(vistas[0].camera);
   else visor.encuadra();
@@ -130,8 +133,10 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
   } catch (e) {
     reparos.push({ grave: false, texto: `Sidecar de segmentación no interpretable: ${String(e)}` });
   }
-  const conFrontera = segmentaciones.find((s) => s.frontera);
-  const conMargen = segmentaciones.find((s) => s.margen);
+  // ⚠️ **La frontera y el margen, sólo de la segmentación que NUMERA lo que se ve.** Con dos
+  // `derived_seg` (el del compuesto y el de la malla), tomar el primero que los declare
+  // pondría el criterio de un modelo bajo la pieza que numeró otro.
+  const numeradora = segmentaciones.find((s) => s.id === etiquetas) ?? null;
 
   const vistaDePieza = new Map<number, VistaJSON>();
   for (const v of vistas) {
@@ -154,7 +159,8 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     reparos,
     clinico,
     piezas,
-    segmentadas: capaFdi?.piezas ?? [],
+    // Sin las fundidas con la encía: se dibujan, pero no se pueden aislar.
+    segmentadas: (capaFdi?.piezas ?? []).filter((f) => !visor.apariencia.sinAislar.includes(f)),
     // ⚠️ **La autoridad es la columna, no `derived/`.** Lo que decide si se puede
     // seleccionar algo es que haya una capa dibujada con `region_id`.
     segmentador: region?.derived_from ?? '',
@@ -163,9 +169,10 @@ export async function abreCaso(fichero: File, visor: Visor): Promise<Caso> {
     apariencia,
     hueso,
     escaner,
+    escanerFallido,
     etiquetas,
     segmentaciones,
-    frontera: conFrontera?.frontera ? { id: conFrontera.id, piezas: conFrontera.frontera } : null,
-    margen: conMargen?.margen ? { id: conMargen.id, margen: conMargen.margen } : null,
+    frontera: numeradora?.frontera ? { id: numeradora.id, piezas: numeradora.frontera } : null,
+    margen: numeradora?.margen ? { id: numeradora.id, margen: numeradora.margen } : null,
   };
 }

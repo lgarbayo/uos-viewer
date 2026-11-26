@@ -31,6 +31,7 @@
 import { DropInViewer, SceneFormat } from '@mkkellogg/gaussian-splats-3d';
 
 import { aplicaOclusion, partePorColumna } from '../uos/Ply';
+import { fundePly } from './FundePly';
 
 /**
  * Corte de neblina por defecto, en la escala 0-255 de la biblioteca.
@@ -182,16 +183,19 @@ export class Apariencia {
       );
       const fundir = new Set(porTamaño.slice(Math.max(libres - 1, 0)));
       fundir.delete(0);
-      const resto: Uint8Array[] = [];
+      // ⚠️ **Se FUNDEN con la encía, no se tiran.** Antes se apartaban y nunca llegaban al
+      // rasterizador: con una dentición completa (32 piezas + encía = 33 grupos) dos dientes
+      // desaparecían del render. Fundidos se dibujan dentro de la escena de la encía; lo
+      // único que se pierde es poder aislarlos, y `fundidos` lo declara.
+      const juntos: Uint8Array[] = [];
+      const encia = trozos.get(0);
+      if (encia) juntos.push(encia);
       for (const c of fundir) {
-        resto.push(trozos.get(c)!);
+        juntos.push(trozos.get(c)!);
         trozos.delete(c);
       }
+      if (juntos.length) trozos.set(0, fundePly(juntos));
       this.fundidos.push(...fundir);
-      // Las piezas fundidas se cargan como escenas propias igualmente si sobra sitio; si
-      // no, se dejan fuera del corte y viajan sin poder aislarse. Aquí simplemente no
-      // entran en el reparto, y `fundidos` lo declara hacia el panel.
-      void resto;
       codigos = [...trozos.keys()].sort((a, b) => a - b);
     }
 
@@ -215,10 +219,14 @@ export class Apariencia {
       })),
       false,
     );
+    // ⚠️ `limpia()` pudo liberar o cambiar el rasterizador durante el `await`, al abrir otro
+    // contenedor: estas escenas son de un `DropInViewer` que ya no existe y sus índices no
+    // valen para el siguiente. El llamante lanza `VisorLiberado` justo después.
+    if (this.visor !== visor) return;
     codigos.forEach((c, i) => this.escenas.push({ capa: id, fdi: c, indice: base + i }));
   }
 
-  /** Piezas que no caben en el tope de escenas y por tanto no se pueden aislar. */
+  /** Piezas que no caben en el tope de escenas: se dibujan con la encía y no se aíslan. */
   get sinAislar(): readonly number[] {
     return this.fundidos;
   }
