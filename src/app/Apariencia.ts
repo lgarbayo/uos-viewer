@@ -32,6 +32,7 @@ import { DropInViewer, SceneFormat } from '@mkkellogg/gaussian-splats-3d';
 
 import { aplicaOclusion, partePorColumna } from '../uos/Ply';
 import { fundePly } from './FundePly';
+import { injertaGris, topeEscenas, UNIFORM_GRIS } from './Gris';
 
 /**
  * Corte de neblina por defecto, en la escala 0-255 de la biblioteca.
@@ -47,7 +48,8 @@ export const UMBRAL_ALFA_255 = 8;
 const MAX_ESCENAS = 32;
 
 /**
- * Cuánto se apaga lo que no es la pieza seleccionada.
+ * Cuánto se apaga lo que no es la pieza seleccionada **si no se puede pasar a gris**: una
+ * versión de la biblioteca cuyo shader no reconoce `Gris.ts`. Ver `resalta`.
  *
  * ⚠️ **Apagar y no ocultar, y no rodear con un borde.** Es la misma decisión que estaba
  * escrita para la malla y sigue valiendo: el contorno de un diente cae en el margen
@@ -83,6 +85,8 @@ export class Apariencia {
   private cerrada = false;
   /** Si las escenas de código 0 se dibujan. Ver `enciendeEncia`. */
   private enciaVisible = true;
+  /** Si ya se avisó de que el shader no admite el gris: una vez por sesión, no por clic. */
+  private sinGrisAvisado = false;
 
   /**
    * El grupo que hay que colgar de la escena, o `null` si aún no hay ninguna capa.
@@ -229,6 +233,9 @@ export class Apariencia {
     if (this.visor !== visor) return;
     this.fundidos.push(...fundidosAqui);
     codigos.forEach((c, i) => this.escenas.push({ capa: id, fdi: c, indice: base + i }));
+    // ⚠️ Cargar escenas RECONSTRUYE el material de la biblioteca, y con él se pierde el
+    // gris. Si había una pieza seleccionada, se vuelve a aplicar sobre el material nuevo.
+    if (this.resaltada !== null) this.resalta(this.resaltada);
   }
 
   /** Piezas que no caben en el tope de escenas: se dibujan con la encía y no se aíslan. */
@@ -237,20 +244,59 @@ export class Apariencia {
   }
 
   /**
-   * Enciende una pieza y apaga el resto. `null` las devuelve todas.
+   * Deja una pieza con su color y pasa el resto a gris. `null` las devuelve todas.
    *
    * Es un uniform por escena, no reconstruir nada: el corte por `region_id` ya se hizo al
-   * cargar.
+   * cargar. El resto se queda **opaco**: gris basta para distinguir la pieza, y
+   * transparentarlo además dejaría ver a través de la arcada lo que hay detrás, que confunde
+   * más de lo que aclara. Si el shader no admite el gris, se vuelve a apagar con la
+   * opacidad, como antes.
    */
   resalta(fdi: number | null): void {
     this.resaltada = fdi;
     if (!this.visor) return;
     const v = this.visor.viewer;
+    const gris = this.grisDeEscenas();
     for (const e of this.escenas) {
       if (e.indice >= v.getSceneCount()) continue;
-      const escena = v.getSplatScene(e.indice);
-      escena.opacity = fdi === null || e.fdi === fdi ? 1.0 : APAGADO;
+      const otra = fdi !== null && e.fdi !== fdi;
+      if (gris && e.indice < gris.length) {
+        gris[e.indice] = otra ? 1 : 0;
+        v.getSplatScene(e.indice).opacity = 1.0;
+      } else {
+        v.getSplatScene(e.indice).opacity = otra ? APAGADO : 1.0;
+      }
     }
+  }
+
+  /**
+   * El array del uniform de gris, injertándolo en el material si aún no lo lleva. `null`
+   * si no hay material todavía o si su shader no se reconoce.
+   */
+  private grisDeEscenas(): number[] | null {
+    const m = this.visor?.viewer.splatMesh?.material;
+    // ⚠️ **Hasta la primera carga buena, el material NO es el del rasterizador.** El
+    // `SplatMesh` nace con un `MeshBasicMaterial` provisional, sin `uniforms`, y sólo lo
+    // cambia `SplatMesh.build()`. Si un PLY no carga, el visor sigue abierto con ese
+    // provisional, y leer sus uniforms tiraría la selección entera con un TypeError.
+    if (!m || !(m as { isShaderMaterial?: boolean }).isShaderMaterial || !m.uniforms) return null;
+    const ya = m.uniforms[UNIFORM_GRIS];
+    if (ya) return ya.value as number[];
+    const vs = injertaGris(m.vertexShader);
+    const tope = topeEscenas(m.vertexShader);
+    if (!vs || tope === null) {
+      if (!this.sinGrisAvisado) {
+        this.sinGrisAvisado = true;
+        console.warn('[apariencia] el shader del rasterizador no admite el gris de selección; ' +
+          'las piezas no seleccionadas se apagan con la opacidad');
+      }
+      return null;
+    }
+    const valor = new Array<number>(tope).fill(0);
+    m.vertexShader = vs;
+    m.uniforms[UNIFORM_GRIS] = { value: valor };
+    m.needsUpdate = true;
+    return valor;
   }
 
   /** Los códigos FDI que tienen escena propia, sin la encía. */
