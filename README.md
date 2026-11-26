@@ -20,16 +20,17 @@ npm test             # los tests del lector (ver más abajo)
 Un paciente real, abierto tal cual sale del emisor (`agentic-smart-health` 0.18, segmentación
 FDI C3). Todo lo dibujado es de este paciente:
 
-- **Coronas**: la apariencia 3DGS del escáner intraoral. Su color **no es medido**: lo
-  aprendió el ajuste y depende de la etiqueta de cada gaussiana. Se nota en la encía: una
-  franja de unos 2 mm alrededor de cada corona sale del color del diente y no rosada. La
-  apariencia es la que se entrenó en agosto con la numeración del modelo de entonces, y el
-  emisor la reutilizó renumerándola con C3: 25.148 de sus 113.540 gaussianas pasaron de
-  diente a encía y conservan el color del diente. Es el color que trae el contenedor: el
-  visor no lo corrige, y «Qué se ve» enseña la nota del emisor que lo avisa. El arreglo está
-  en el emisor, que ya no reutiliza una apariencia cuya frontera diente/encía cambió. Con la
-  apariencia entrenada de nuevo con C3, la encía junto a las coronas sale del mismo rosa que
-  el resto. Las capturas de esta sección son de antes de ese arreglo.
+- **Coronas**: la apariencia 3DGS del escáner intraoral, entrenada con la numeración C3. Su
+  color **no es medido**: lo aprendió el ajuste y depende de la etiqueta de cada gaussiana
+  (esmalte donde dice diente, encía donde no).
+  - Antes el emisor reutilizaba la apariencia entrenada en agosto con la numeración del
+    modelo de entonces, renumerada con C3: 25.148 de sus 113.540 gaussianas pasaron de
+    diente a encía y conservaban el color del diente, así que la encía de la vista frontal
+    salía con una franja de unos 2 mm del color del diente alrededor de cada corona.
+  - El emisor ya no reutiliza una apariencia cuya frontera diente/encía cambió, y este caso
+    se ha regenerado con la apariencia entrenada con C3: la encía llega rosada hasta las
+    coronas. «Qué se ve» enseña la nota del emisor que avisa de que el color depende de la
+    etiqueta.
 - **Numeración FDI** (Capa 3, `investigational`): la pone `gaussian-engine.apariencia`, y
   es la que separa la encía. La encía sale oculta por defecto y se enciende desde «Qué se ve».
 - **Hueso y raíces**: la densidad medida del CBCT, en gris de visualización. La registración
@@ -45,7 +46,8 @@ FDI C3). Todo lo dibujado es de este paciente:
 | **Pieza 11 aislada** desde el odontograma, con su ficha | **Vista oclusal** |
 | ![La pieza 11 aislada y su ficha clínica](docs/medios/noviembre-pieza-11.png) | ![Vista oclusal de la arcada superior](docs/medios/noviembre-oclusal.png) |
 
-Las capas, una a una: encía visible, encía oculta, sin hueso y la pieza 11 aislada.
+Las capas, una a una: encía visible, encía oculta, el hueso encendido (con sus cortes sueltos)
+y la pieza 11 aislada, con el resto en gris.
 
 ![Las capas del render, una a una](docs/medios/noviembre-capas.gif)
 
